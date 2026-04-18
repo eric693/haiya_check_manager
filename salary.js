@@ -280,8 +280,9 @@ async function loadOvertimeRecordsCard(yearMonth, salaryData) {
     console.log(`   國定假日加班費: $${holidayOvertimePay}`);
     console.log(`   國定假日出勤薪資: $${holidayWorkPay}`);
     
-    // ... 顯示邏輯 ...
-    
+    const overtimeCard = document.getElementById('overtime-card');
+    if (!overtimeCard) return;
+
     if (totalOvertimeHours > 0) {
         overtimeCard.style.display = 'block';
         
@@ -899,11 +900,11 @@ async function handleSalaryConfigSubmit(e) {
     const note = safeGetValue('config-note');
     
     // 驗證
-    if (!employeeId || !employeeName || !baseSalary || parseFloat(baseSalary) <= 0) {
+    if (!employeeId || !employeeName) {
         showNotification(t('SALARY_FILL_REQUIRED'), 'error');
         return;
     }
-    
+
     if (!employeeType || !salaryType) {
         showNotification(t('SALARY_SELECT_TYPE'), 'error');
         return;
