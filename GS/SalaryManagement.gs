@@ -1099,6 +1099,65 @@ function getMySalaryHistory(userId, limit = 12) {
 }
 
 /**
+ * ✅ 重算指定月份所有員工薪資（管理員用）
+ */
+function recalculateAllMonthlySalary(sessionToken, yearMonth) {
+  try {
+    const employee = checkSession_(sessionToken);
+    const user = employee.user;
+    if (!user) return { success: false, message: "SESSION_INVALID" };
+    if (user.dept !== '管理員') return { success: false, message: "ERR_NO_PERMISSION" };
+
+    const configSheet = getEmployeeSalarySheet();
+    const configData = configSheet.getDataRange().getValues();
+
+    let successCount = 0;
+    let failCount = 0;
+    const errors = [];
+
+    // 從第 2 列起逐一計算（跳過標題列）
+    for (let i = 1; i < configData.length; i++) {
+      const employeeId = String(configData[i][0]).trim();
+      const employeeName = String(configData[i][1]).trim();
+      const status = String(configData[i][26] || '').trim(); // AA 欄：狀態
+
+      if (!employeeId || status === '離職') continue;
+
+      try {
+        Logger.log(`🔄 重算 ${employeeName} (${employeeId}) ${yearMonth}`);
+        const result = calculateMonthlySalary(employeeId, yearMonth);
+        if (result.success) {
+          saveMonthlySalary(result.data);
+          successCount++;
+          Logger.log(`   ✅ 完成`);
+        } else {
+          failCount++;
+          errors.push(`${employeeName}: ${result.message}`);
+          Logger.log(`   ⚠️ ${result.message}`);
+        }
+      } catch (e) {
+        failCount++;
+        errors.push(`${employeeName}: ${e.message}`);
+        Logger.log(`   ❌ ${e.message}`);
+      }
+    }
+
+    Logger.log(`✅ 重算完成: 成功 ${successCount} 人, 失敗 ${failCount} 人`);
+    return {
+      success: true,
+      successCount: successCount,
+      failCount: failCount,
+      errors: errors,
+      message: `完成：${successCount} 人已更新，${failCount} 人失敗`
+    };
+
+  } catch (error) {
+    Logger.log('❌ recalculateAllMonthlySalary 失敗: ' + error);
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
  * ✅ 查詢所有員工的月薪資列表（完整版）
  */
 function getAllMonthlySalary(yearMonth) {

@@ -1816,6 +1816,19 @@ function handleGetAllMonthlySalary(params) {
 }
 
 /**
+ * ✅ 處理重算全員薪資（管理員）
+ */
+function handleRecalculateAllMonthlySalary(params) {
+  try {
+    const result = recalculateAllMonthlySalary(params.token, params.yearMonth);
+    return { ok: result.success, successCount: result.successCount, failCount: result.failCount, errors: result.errors, msg: result.message };
+  } catch (error) {
+    Logger.log('❌ handleRecalculateAllMonthlySalary 錯誤: ' + error);
+    return { ok: false, msg: error.message };
+  }
+}
+
+/**
  * ✅ 從 Session 取得員工ID的輔助函數
  */
 function getUserIdFromSession(token) {

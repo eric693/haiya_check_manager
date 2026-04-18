@@ -762,6 +762,7 @@ function reviewLeaveRequest(sessionToken, rowNumber, reviewAction, comment) {
     const userId = record[1];
     const employeeName = record[2];
     const leaveType = record[4];
+    const leaveStartDate = record[5]; // 請假開始日期（用於確定月份）
     const workHours = record[7];
     const days = record[8];
     
@@ -803,12 +804,34 @@ function reviewLeaveRequest(sessionToken, rowNumber, reviewAction, comment) {
       Logger.log(`   ${leaveType}: 扣除 ${workHours} 小時`);
       Logger.log(`   剩餘: ${deductResult.remaining} 小時`);
     }
-    
+
+    // 請假核准或拒絕後，同步重算該月薪資（請假扣款會變動）
+    try {
+      let yearMonth = '';
+      if (leaveStartDate instanceof Date) {
+        yearMonth = Utilities.formatDate(leaveStartDate, 'Asia/Taipei', 'yyyy-MM');
+      } else if (typeof leaveStartDate === 'string') {
+        yearMonth = String(leaveStartDate).substring(0, 7);
+      }
+      if (yearMonth) {
+        Logger.log(`🔄 請假審核後重算 ${employeeName} 的 ${yearMonth} 薪資...`);
+        const recalcResult = calculateMonthlySalary(userId, yearMonth);
+        if (recalcResult.success) {
+          saveMonthlySalary(recalcResult.data);
+          Logger.log(`✅ 薪資已同步更新`);
+        } else {
+          Logger.log(`⚠️ 薪資計算失敗（不影響請假審核結果）: ${recalcResult.message}`);
+        }
+      }
+    } catch (salaryErr) {
+      Logger.log(`⚠️ 薪資同步失敗（不影響請假審核結果）: ${salaryErr.message}`);
+    }
+
     Logger.log('');
     Logger.log('═══════════════════════════════════════');
     Logger.log('✅✅✅ 審核完成');
     Logger.log('═══════════════════════════════════════');
-    
+
     return {
       ok: true,
       msg: "審核完成"

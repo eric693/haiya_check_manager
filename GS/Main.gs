@@ -165,6 +165,8 @@ function doGet(e) {
       //   return respond1(handleSaveMonthlySalary(e.parameter));
       case "getAllMonthlySalary":
         return respond1(handleGetAllMonthlySalary(e.parameter));
+      case "recalculateAllMonthlySalary":
+        return respond1(handleRecalculateAllMonthlySalary(e.parameter));
        // ==================== 日薪系統 ====================
       case "setDailyEmployee":
         return respond1(handleSetDailyEmployee(e.parameter));

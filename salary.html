@@ -1262,9 +1262,14 @@
                     <input type="month" id="filter-year-month-list" class="form-input">
                 </div>
 
-                <button class="submit-btn" style="max-width: 300px;" onclick="loadAllEmployeeSalaryFromList()" data-i18n="BTN_LOAD_SALARY_LIST">
-                    📋 載入薪資列表
-                </button>
+                <div style="display: flex; gap: 0.75rem; max-width: 640px; flex-wrap: wrap;">
+                    <button class="submit-btn" style="flex: 1; min-width: 200px;" onclick="loadAllEmployeeSalaryFromList()" data-i18n="BTN_LOAD_SALARY_LIST">
+                        📋 載入薪資列表
+                    </button>
+                    <button class="submit-btn" id="recalculate-all-btn" style="flex: 1; min-width: 200px; background: linear-gradient(135deg, #f59e0b, #d97706);" onclick="recalculateAllSalary()">
+                        🔄 重算全員薪資
+                    </button>
+                </div>
 
                 <div id="all-salary-loading-list" class="loading" style="display: none;">
                     <div class="loading-spinner"></div>

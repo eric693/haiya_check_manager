@@ -1444,6 +1444,37 @@ async function saveSalaryRecord(data) {
 }
 
 /**
+ * 重算指定月份全員薪資（管理員）
+ */
+async function recalculateAllSalary() {
+    const yearMonthEl = document.getElementById('filter-year-month-list');
+    if (!yearMonthEl || !yearMonthEl.value) {
+        showNotification('請先選擇年月', 'error');
+        return;
+    }
+    const yearMonth = yearMonthEl.value;
+    const btn = document.getElementById('recalculate-all-btn');
+
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 計算中...'; }
+
+    try {
+        const res = await callApifetch(`recalculateAllMonthlySalary&yearMonth=${encodeURIComponent(yearMonth)}`);
+        if (res.ok) {
+            showNotification(`✅ ${res.msg || '重算完成'}`, 'success');
+            // 自動重新載入列表
+            await loadAllEmployeeSalaryFromList();
+        } else {
+            showNotification(res.msg || '重算失敗', 'error');
+        }
+    } catch (err) {
+        console.error('重算失敗:', err);
+        showNotification('網路錯誤，請重試', 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🔄 重算全員薪資'; }
+    }
+}
+
+/**
  * 載入所有員工薪資列表
  */
 async function loadAllEmployeeSalaryFromList() {
