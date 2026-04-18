@@ -91,6 +91,10 @@ async function loadCurrentEmployeeSalary() {
         
         if (result.ok && result.data) {
             console.log('✅ 成功載入薪資資料');
+            // 儲存薪資類型供出勤統計午休計算使用
+            if (result.data.salaryType || result.data['薪資類型']) {
+                localStorage.setItem('userSalaryType', result.data.salaryType || result.data['薪資類型']);
+            }
             displayEmployeeSalary(result.data);
             if (contentEl) contentEl.style.display = 'block';
             await loadAttendanceDetails(currentMonth);

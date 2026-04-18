@@ -1390,14 +1390,29 @@ function updateReviewStatus(rowNumber, status, note) {
         ];
         
         attendanceSheet.appendRow(row);
-        
+
         Logger.log('✅ 已寫入出勤紀錄');
         Logger.log('   寫入內容: ' + JSON.stringify(row));
+
+        // 補打卡核准後重算薪資（時薪員工工時有異動）
+        try {
+          const yearMonth = punchDate.substring(0, 7);
+          Logger.log(`🔄 補打卡核准後重算 ${employeeName} (${userId}) ${yearMonth} 薪資...`);
+          const recalcResult = calculateMonthlySalary(userId, yearMonth);
+          if (recalcResult.success) {
+            saveMonthlySalary(recalcResult.data);
+            Logger.log('✅ 薪資已同步更新');
+          } else {
+            Logger.log('⚠️ 薪資重算失敗（不影響審核結果）: ' + recalcResult.message);
+          }
+        } catch (salaryErr) {
+          Logger.log('⚠️ 薪資同步失敗（不影響審核結果）: ' + salaryErr.message);
+        }
       } else {
         Logger.log('❌ 找不到出勤紀錄工作表');
       }
     }
-    
+
     // ✅ 發送 LINE 通知
     const isApproved = (status === "v");
     

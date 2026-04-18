@@ -1350,8 +1350,8 @@ function calculateHourlySalary(employeeId, yearMonth) {
     
     Logger.log(`💵 時薪: $${hourlyRate}`);
     
-    // 2. ⭐ 取得該月份的打卡記錄
-    const attendanceRecords = getEmployeeMonthlyAttendanceInternal(employeeId, yearMonth);
+    // 2. ⭐ 取得該月份的打卡記錄（時薪員工扣0.5h午休）
+    const attendanceRecords = getEmployeeMonthlyAttendanceInternal(employeeId, yearMonth, '時薪');
     Logger.log(`📋 找到 ${attendanceRecords.length} 筆打卡記錄`);
     
     // 3. 計算工作時數
@@ -1774,11 +1774,13 @@ function testCalculateHourlySalary() {
  * @param {string} yearMonth - 年月 (YYYY-MM)
  * @returns {Array} 打卡記錄陣列
  */
-function getEmployeeMonthlyAttendanceInternal(employeeId, yearMonth) {
+function getEmployeeMonthlyAttendanceInternal(employeeId, yearMonth, salaryType) {
+  salaryType = salaryType || '月薪'; // 預設月薪（扣1h午休）
   try {
     Logger.log('📋 開始取得員工打卡記錄');
     Logger.log('   員工ID: ' + employeeId);
     Logger.log('   年月: ' + yearMonth);
+    Logger.log('   薪資類型: ' + salaryType);
     
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName(SHEET_ATTENDANCE);
@@ -1914,10 +1916,11 @@ function getEmployeeMonthlyAttendanceInternal(employeeId, yearMonth) {
           
           if (diffMs > 0) {
             const totalHours = diffMs / (1000 * 60 * 60);
-            const lunchBreak = 1;
-            // workHours = Math.max(0, totalHours - lunchBreak);
-            workHours = Math.floor(Math.max(0, totalHours - lunchBreak));
-            Logger.log(`   ${date}: ${punchIn} ~ ${punchOut} = ${workHours.toFixed(2)}h (原始: ${totalHours.toFixed(2)}h)`);
+            // 月薪扣1小時午休，時薪扣0.5小時午休
+            const lunchBreak = (salaryType === '時薪') ? 0.5 : 1;
+            // 四捨五入到0.5小時精度（時薪員工按實際工時計算）
+            workHours = Math.round(Math.max(0, totalHours - lunchBreak) * 2) / 2;
+            Logger.log(`   ${date}: ${punchIn} ~ ${punchOut} = ${workHours.toFixed(2)}h (原始: ${totalHours.toFixed(2)}h, 午休: ${lunchBreak}h)`);
           } else {
             Logger.log(`   ⚠️ ${date}: ${punchIn} ~ ${punchOut} 時間異常（下班早於上班）`);
           }

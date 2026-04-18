@@ -982,8 +982,9 @@ async function updateMonthlyStats(records) {
                 let totalHoursRaw = diffMs / (1000 * 60 * 60);
                 
                 if (totalHoursRaw > 0) {
-                    // ⭐⭐⭐ 修正：智能計算午休時間
-                    const lunchBreak = calculateLunchBreak(inTime, outTime);
+                    // ⭐⭐⭐ 修正：智能計算午休時間（依薪資類型：月薪扣1h，時薪扣0.5h）
+                    const _salaryType = localStorage.getItem('userSalaryType') || '月薪';
+                    const lunchBreak = calculateLunchBreak(inTime, outTime, _salaryType);
                     dayWorkHours = Math.max(0, totalHoursRaw - lunchBreak);
                     
                     // ⭐⭐⭐ 修正：四捨五入到 0.5 小時
@@ -3429,9 +3430,10 @@ async function exportEmployeePunchReport() {
                     if (diffMs > 0) {
                         // 計算總工時（小時）
                         const totalHours = diffMs / (1000 * 60 * 60);
-                        
-                        // 扣除午休 1 小時
-                        const lunchBreak = 1;
+
+                        // 依薪資類型扣除午休（月薪1h，時薪0.5h）
+                        const _salaryType2 = localStorage.getItem('userSalaryType') || '月薪';
+                        const lunchBreak = calculateLunchBreak(inTime, outTime, _salaryType2);
                         const netWorkHours = totalHours - lunchBreak;
                         
                         // 計算加班時數（超過標準工時 8 小時的部分）

@@ -645,7 +645,7 @@ async function exportWorklogReport() {
             
             const res = await callApifetch(`getWorklogReport&employeeId=${employeeId}&yearMonth=${yearMonth}`);
             
-            if (!res.ok || !res.worklogs || !res.worklogs.length === 0) {
+            if (!res.ok || !res.worklogs || res.worklogs.length === 0) {
                 showNotification(t('NO_WORKLOG_THIS_MONTH') || '本月沒有工作日誌', 'warning');
                 return;
             }
