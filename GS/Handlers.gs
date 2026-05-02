@@ -906,6 +906,30 @@ function handleExportShifts(params) {
   }
 }
 
+// ==================== 班別設定 ====================
+
+function handleGetShiftTypes(params) {
+  return getShiftTypes();
+}
+
+function handleAddShiftType(params) {
+  const { token, group, name, startTime, endTime, isLeave, sortOrder } = params;
+  if (!token || !group || !name) return { ok: false, msg: '缺少必要參數 (token / group / name)' };
+  return addShiftType(token, group, name, startTime, endTime, isLeave, sortOrder);
+}
+
+function handleUpdateShiftType(params) {
+  const { token, rowIndex, group, name, startTime, endTime, isLeave, sortOrder } = params;
+  if (!token || !rowIndex || !group || !name) return { ok: false, msg: '缺少必要參數' };
+  return updateShiftType(token, rowIndex, group, name, startTime, endTime, isLeave, sortOrder);
+}
+
+function handleDeleteShiftType(params) {
+  const { token, rowIndex } = params;
+  if (!token || !rowIndex) return { ok: false, msg: '缺少必要參數 (token / rowIndex)' };
+  return deleteShiftType(token, rowIndex);
+}
+
 // ==================== 薪資系統 Handler 函數（完全修正版 v4.0）====================
 
 // Handlers.gs - handleSetEmployeeSalaryTW 完全修正版 v5.0

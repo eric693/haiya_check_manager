@@ -153,7 +153,15 @@ function doGet(e) {
         return respond1(handleGetWeeklyShiftStats(e.parameter));
       case "exportShifts":
         return respond1(handleExportShifts(e.parameter));
-      
+      case "getShiftTypes":
+        return respond1(handleGetShiftTypes(e.parameter));
+      case "addShiftType":
+        return respond1(handleAddShiftType(e.parameter));
+      case "updateShiftType":
+        return respond1(handleUpdateShiftType(e.parameter));
+      case "deleteShiftType":
+        return respond1(handleDeleteShiftType(e.parameter));
+
       // ==================== 薪資系統 ====================
       case "setEmployeeSalaryTW":
         return respond1(handleSetEmployeeSalaryTW(e.parameter));

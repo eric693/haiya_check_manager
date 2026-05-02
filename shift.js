@@ -10,6 +10,7 @@ let allLocations = [];
 let batchData = [];
 let translations = {}; // 👈 新增：翻譯物件
 let currentLang = localStorage.getItem("lang") || "zh-TW"; // 👈 新增：當前語言
+let shiftTypesCache = []; // 班別快取 [{rowIndex, name, startTime, endTime, isLeave, sortOrder, group}]
 
 // 👉 新增：權限控制變數
 let currentUserRole = null;
@@ -86,9 +87,10 @@ function renderTranslations(container = document) {
 }
 
 // ========== 初始化 ==========
-document.addEventListener('DOMContentLoaded', async function() { 
+document.addEventListener('DOMContentLoaded', async function() {
     await loadTranslations(currentLang);
     await loadUserPermissions();
+    await loadShiftTypes();        // 先載入班別，再初始化其他
     initializeTabs();
     loadEmployees();
     loadLocations();
@@ -259,60 +261,119 @@ function checkSchedulingPermission(actionName) {
     console.log('✅ 權限檢查通過');
     return true;
 }
+// ========== 班別動態載入 ==========
+
+async function loadShiftTypes() {
+    try {
+        const token = localStorage.getItem('sessionToken');
+        const params = new URLSearchParams({ action: 'getShiftTypes', token: token || '' });
+        const res = await fetch(`${apiUrl}?${params}`);
+        const data = await res.json();
+
+        if (data.ok && data.groups) {
+            shiftTypesCache = [];
+            data.groups.forEach(g => {
+                g.items.forEach(item => {
+                    shiftTypesCache.push({ ...item, group: g.group });
+                });
+            });
+            populateShiftTypeSelects(data.groups);
+        } else {
+            console.warn('⚠️ 班別載入失敗，使用備用清單');
+            populateShiftTypeFallback();
+        }
+    } catch (err) {
+        console.error('❌ loadShiftTypes 失敗:', err);
+        populateShiftTypeFallback();
+    }
+}
+
+function populateShiftTypeSelects(groups) {
+    const addSelect = document.getElementById('shift-type');
+    const filterSelect = document.getElementById('filter-shift-type');
+
+    if (addSelect) {
+        addSelect.innerHTML = '<option value="">請選擇班別</option>';
+        groups.forEach(g => {
+            const og = document.createElement('optgroup');
+            og.label = g.group;
+            g.items.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.name;
+                opt.textContent = item.isLeave
+                    ? item.name
+                    : `${item.name} (${item.startTime}-${item.endTime})`;
+                og.appendChild(opt);
+            });
+            addSelect.appendChild(og);
+        });
+        const customOpt = document.createElement('option');
+        customOpt.value = '自訂';
+        customOpt.textContent = '自訂時間';
+        addSelect.appendChild(customOpt);
+    }
+
+    if (filterSelect) {
+        filterSelect.innerHTML = '<option value="">全部</option>';
+        groups.forEach(g => {
+            const og = document.createElement('optgroup');
+            og.label = g.group;
+            g.items.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.name;
+                opt.textContent = item.isLeave
+                    ? item.name
+                    : `${item.name} (${item.startTime}-${item.endTime})`;
+                og.appendChild(opt);
+            });
+            filterSelect.appendChild(og);
+        });
+    }
+}
+
+function populateShiftTypeFallback() {
+    const fallback = [
+        { group: '廚房班別', name: '廚房A班', startTime: '11:00', endTime: '20:00', isLeave: false },
+        { group: '外場班別', name: '外場A1班', startTime: '11:00', endTime: '20:00', isLeave: false },
+        { group: '假別', name: '排休', startTime: '00:00', endTime: '00:00', isLeave: true },
+    ];
+    shiftTypesCache = fallback;
+    const groups = [
+        { group: '廚房班別', items: fallback.filter(x => x.group === '廚房班別') },
+        { group: '外場班別', items: fallback.filter(x => x.group === '外場班別') },
+        { group: '假別', items: fallback.filter(x => x.group === '假別') },
+    ];
+    populateShiftTypeSelects(groups);
+}
+
 function autoFillShiftTime(shiftType) {
-    const times = {
-        // 廚房班別
-        '廚房A班': ['11:00', '20:00'],
-        '廚房B班': ['11:30', '20:30'],
-        '廚房C班': ['12:00', '21:00'],
-        '廚房D班': ['13:00', '22:00'],
-        '廚房E班': ['14:00', '23:00'],
-        '廚房F班': ['15:00', '00:00'],
-        '廚房G班': ['11:30', '15:00'],
-        '廚房H班': ['18:00', '23:00'],
-        '廚房I班': ['18:00', '00:00'],
-        
-        // 外場班別
-        '外場A1班': ['11:00', '20:00'],
-        '外場A2班': ['11:30', '16:30'],
-        '外場A3班': ['11:30', '17:00'],
-        '外場A4班': ['11:30', '20:30'],
-        '外場B1班': ['16:00', '01:00'],
-        '外場B2班': ['17:00', '01:00'],
-        '外場B3班': ['18:00', '01:00'],
-        '外場B4班': ['19:00', '01:00'],
-        
-        // 假別
-        '年假': ['00:00', '00:00'],
-        '過年假': ['00:00', '00:00'],
-        '國定假日': ['00:00', '00:00'],
-        '排休': ['00:00', '00:00']
-    };
-    
     const startTimeInput = document.getElementById('start-time');
     const endTimeInput = document.getElementById('end-time');
-    
-    // 假別處理
-    if (shiftType === '年假' || shiftType === '過年假' || shiftType === '國定假日' || shiftType === '排休') {
-        startTimeInput.value = '00:00';
-        endTimeInput.value = '00:00';
-        startTimeInput.disabled = true;
-        endTimeInput.disabled = true;
-    } 
-    // 自訂班別
-    else if (shiftType === '自訂') {
+    if (!startTimeInput || !endTimeInput) return;
+
+    if (shiftType === '自訂') {
         startTimeInput.value = '';
         endTimeInput.value = '';
         startTimeInput.disabled = false;
         endTimeInput.disabled = false;
         startTimeInput.focus();
-    } 
-    // 預設班別
-    else if (times[shiftType]) {
-        startTimeInput.value = times[shiftType][0];
-        endTimeInput.value = times[shiftType][1];
-        startTimeInput.disabled = false;
-        endTimeInput.disabled = false;
+        return;
+    }
+
+    // 從快取找時間
+    const found = shiftTypesCache.find(s => s.name === shiftType);
+    if (found) {
+        if (found.isLeave) {
+            startTimeInput.value = '00:00';
+            endTimeInput.value = '00:00';
+            startTimeInput.disabled = true;
+            endTimeInput.disabled = true;
+        } else {
+            startTimeInput.value = found.startTime;
+            endTimeInput.value = found.endTime;
+            startTimeInput.disabled = false;
+            endTimeInput.disabled = false;
+        }
     }
 }
 // ==================== 員工載入函式（完整除錯版） ====================
@@ -720,39 +781,38 @@ function createShiftItem(shift) {
     
     return div;
 }
-// 更新 getShiftTypeBadge 函數以支援新班別
 function getShiftTypeBadge(shiftType) {
-    const badgeClass = {
-        // 廚房班別
-        '廚房A班': 'badge-kitchen-a',
-        '廚房B班': 'badge-kitchen-b',
-        '廚房C班': 'badge-kitchen-c',
-        '廚房D班': 'badge-kitchen-d',
-        '廚房E班': 'badge-kitchen-e',
-        '廚房F班': 'badge-kitchen-f',
-        '廚房G班': 'badge-kitchen-g',
-        '廚房H班': 'badge-kitchen-h',
+    const staticMap = {
+        '廚房A班': 'badge-kitchen-a', '廚房B班': 'badge-kitchen-b',
+        '廚房C班': 'badge-kitchen-c', '廚房D班': 'badge-kitchen-d',
+        '廚房E班': 'badge-kitchen-e', '廚房F班': 'badge-kitchen-f',
+        '廚房G班': 'badge-kitchen-g', '廚房H班': 'badge-kitchen-h',
         '廚房I班': 'badge-kitchen-i',
-        
-        // 外場班別
-        '外場A1班': 'badge-floor-a1',
-        '外場A2班': 'badge-floor-a2',
-        '外場A3班': 'badge-floor-a3',
-        '外場A4班': 'badge-floor-a4',
-        '外場B1班': 'badge-floor-b1',
-        '外場B2班': 'badge-floor-b2',
-        '外場B3班': 'badge-floor-b3',
-        '外場B4班': 'badge-floor-b4',
-        
-        // 假別
-        '年假': 'badge-annual-leave',
-        '過年假': 'badge-cny-leave',
-        '國定假日': 'badge-national-holiday',
-        '排休': 'badge-dayoff',
+        '外場A1班': 'badge-floor-a1', '外場A2班': 'badge-floor-a2',
+        '外場A3班': 'badge-floor-a3', '外場A4班': 'badge-floor-a4',
+        '外場B1班': 'badge-floor-b1', '外場B2班': 'badge-floor-b2',
+        '外場B3班': 'badge-floor-b3', '外場B4班': 'badge-floor-b4',
+        '年假': 'badge-annual-leave', '過年假': 'badge-cny-leave',
+        '國定假日': 'badge-national-holiday', '排休': 'badge-dayoff',
         '自訂': 'badge-custom'
-    }[shiftType] || 'badge-custom';
-    
-    return `<span class="badge ${badgeClass}">${shiftType}</span>`;
+    };
+
+    if (staticMap[shiftType]) {
+        return `<span class="badge ${staticMap[shiftType]}">${shiftType}</span>`;
+    }
+
+    // dynamic: check cache for group-based color
+    const cached = shiftTypesCache.find(s => s.name === shiftType);
+    if (cached) {
+        const group = (cached.group || '').replace(/\s/g, '').toLowerCase();
+        let cls = 'badge-custom';
+        if (cached.isLeave) cls = 'badge-dayoff';
+        else if (group.includes('廚房') || group.includes('kitchen')) cls = 'badge-kitchen-a';
+        else if (group.includes('外場') || group.includes('floor')) cls = 'badge-floor-a1';
+        return `<span class="badge ${cls}">${shiftType}</span>`;
+    }
+
+    return `<span class="badge badge-custom">${shiftType}</span>`;
 }
 
 function formatDate(dateString) {

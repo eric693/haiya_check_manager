@@ -3,6 +3,155 @@
  * 負責處理員工排班的所有邏輯
  */
 
+// ==================== 班別設定 CRUD ====================
+
+const SHEET_SHIFT_TYPES = '班別設定';
+
+function getShiftTypeSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_SHIFT_TYPES);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_SHIFT_TYPES);
+    const header = ['分組', '班別名稱', '開始時間', '結束時間', '是假別', '排序'];
+    sheet.appendRow(header);
+    const hRange = sheet.getRange(1, 1, 1, 6);
+    hRange.setBackground('#4A90E2');
+    hRange.setFontColor('#FFFFFF');
+    hRange.setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    [120, 150, 100, 100, 80, 60].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
+    initDefaultShiftTypes_(sheet);
+    Logger.log('✅ 班別設定工作表已建立並初始化');
+  }
+  return sheet;
+}
+
+function initDefaultShiftTypes_(sheet) {
+  const defaults = [
+    ['廚房班別','廚房A班','11:00','20:00',false,1],
+    ['廚房班別','廚房B班','11:30','20:30',false,2],
+    ['廚房班別','廚房C班','12:00','21:00',false,3],
+    ['廚房班別','廚房D班','13:00','22:00',false,4],
+    ['廚房班別','廚房E班','14:00','23:00',false,5],
+    ['廚房班別','廚房F班','15:00','00:00',false,6],
+    ['廚房班別','廚房G班','11:30','15:00',false,7],
+    ['廚房班別','廚房H班','18:00','23:00',false,8],
+    ['廚房班別','廚房I班','18:00','00:00',false,9],
+    ['外場班別','外場A1班','11:00','20:00',false,1],
+    ['外場班別','外場A2班','11:30','16:30',false,2],
+    ['外場班別','外場A3班','11:30','17:00',false,3],
+    ['外場班別','外場A4班','11:30','20:30',false,4],
+    ['外場班別','外場B1班','16:00','01:00',false,5],
+    ['外場班別','外場B2班','17:00','01:00',false,6],
+    ['外場班別','外場B3班','18:00','01:00',false,7],
+    ['外場班別','外場B4班','19:00','01:00',false,8],
+    ['假別','年假','00:00','00:00',true,1],
+    ['假別','過年假','00:00','00:00',true,2],
+    ['假別','國定假日','00:00','00:00',true,3],
+    ['假別','排休','00:00','00:00',true,4],
+  ];
+  defaults.forEach(row => sheet.appendRow(row));
+  Logger.log('✅ 預設班別共 ' + defaults.length + ' 筆已寫入');
+}
+
+function getShiftTypes() {
+  try {
+    const sheet = getShiftTypeSheet_();
+    const values = sheet.getDataRange().getValues();
+    const groupMap = {};
+
+    for (let i = 1; i < values.length; i++) {
+      const [group, name, startTime, endTime, isLeaveRaw, sortOrder] = values[i];
+      if (!name) continue;
+      const isLeave = (isLeaveRaw === true || String(isLeaveRaw).toUpperCase() === 'TRUE');
+      if (!groupMap[group]) groupMap[group] = { group: group || '其他', items: [] };
+      groupMap[group].items.push({
+        rowIndex: i + 1,
+        name: String(name),
+        startTime: String(startTime || ''),
+        endTime: String(endTime || ''),
+        isLeave: isLeave,
+        sortOrder: Number(sortOrder) || 99
+      });
+    }
+
+    Object.values(groupMap).forEach(g => g.items.sort((a, b) => a.sortOrder - b.sortOrder));
+    return { ok: true, groups: Object.values(groupMap) };
+  } catch (err) {
+    Logger.log('❌ getShiftTypes: ' + err.message);
+    return { ok: false, msg: err.message };
+  }
+}
+
+function addShiftType(token, group, name, startTime, endTime, isLeave, sortOrder) {
+  try {
+    const perm = checkSchedulingPermission(token);
+    if (!perm.ok) return perm;
+    if (!group || !name) return { ok: false, msg: '分組和班別名稱為必填' };
+
+    const sheet = getShiftTypeSheet_();
+    const values = sheet.getDataRange().getValues();
+    for (let i = 1; i < values.length; i++) {
+      if (String(values[i][1]) === String(name)) return { ok: false, msg: `班別「${name}」已存在` };
+    }
+
+    const isLeaveBool = (isLeave === 'true' || isLeave === true);
+    sheet.appendRow([group, name, startTime || '', endTime || '', isLeaveBool, parseInt(sortOrder) || 99]);
+    Logger.log(`✅ 新增班別: ${name}`);
+    return { ok: true, msg: `班別「${name}」已新增` };
+  } catch (err) {
+    Logger.log('❌ addShiftType: ' + err.message);
+    return { ok: false, msg: err.message };
+  }
+}
+
+function updateShiftType(token, rowIndex, group, name, startTime, endTime, isLeave, sortOrder) {
+  try {
+    const perm = checkSchedulingPermission(token);
+    if (!perm.ok) return perm;
+    if (!group || !name) return { ok: false, msg: '分組和班別名稱為必填' };
+
+    const sheet = getShiftTypeSheet_();
+    const row = parseInt(rowIndex);
+    if (row < 2 || row > sheet.getLastRow()) return { ok: false, msg: '無效的行號' };
+
+    const values = sheet.getDataRange().getValues();
+    for (let i = 1; i < values.length; i++) {
+      if ((i + 1) !== row && String(values[i][1]) === String(name)) {
+        return { ok: false, msg: `班別「${name}」已存在` };
+      }
+    }
+
+    const isLeaveBool = (isLeave === 'true' || isLeave === true);
+    sheet.getRange(row, 1, 1, 6).setValues([[group, name, startTime || '', endTime || '', isLeaveBool, parseInt(sortOrder) || 99]]);
+    Logger.log(`✅ 更新班別 row${row}: ${name}`);
+    return { ok: true, msg: `班別「${name}」已更新` };
+  } catch (err) {
+    Logger.log('❌ updateShiftType: ' + err.message);
+    return { ok: false, msg: err.message };
+  }
+}
+
+function deleteShiftType(token, rowIndex) {
+  try {
+    const session = checkSession_(token);
+    if (!session.ok || !session.user) return { ok: false, msg: '未授權' };
+    if (session.user.dept !== '管理員') return { ok: false, msg: '需要管理員權限才能刪除班別' };
+
+    const sheet = getShiftTypeSheet_();
+    const row = parseInt(rowIndex);
+    if (row < 2 || row > sheet.getLastRow()) return { ok: false, msg: '無效的行號' };
+
+    const name = sheet.getRange(row, 2).getValue();
+    sheet.deleteRow(row);
+    Logger.log(`✅ 刪除班別 row${row}: ${name}`);
+    return { ok: true, msg: `班別「${name}」已刪除` };
+  } catch (err) {
+    Logger.log('❌ deleteShiftType: ' + err.message);
+    return { ok: false, msg: err.message };
+  }
+}
+
 // ==================== ⭐ 格式化函數 (新增) ====================
 
 function formatDateOnly(dateValue) {
