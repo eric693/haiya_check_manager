@@ -601,6 +601,8 @@ function displayEmployeeSalary(data) {
     // 加班費
     safeSet('detail-weekday-overtime', formatCurrency(data.weekdayOvertimePay || 0));
     safeSet('detail-restday-overtime', formatCurrency(data.restdayOvertimePay || 0));
+    safeSet('detail-sunday-overtime', formatCurrency(data.sundayOvertimePay || 0));
+    safeSet('detail-holiday-work-pay', formatCurrency(data.holidayWorkPay || 0));
     safeSet('detail-holiday-overtime', formatCurrency(data.holidayOvertimePay || 0));
     
     // 扣款項目

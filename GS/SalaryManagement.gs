@@ -1709,6 +1709,7 @@ function calculateHourlySalary(employeeId, yearMonth) {
       otherAllowances: otherAllowances,
       weekdayOvertimePay: weekdayOvertimePay,
       restdayOvertimePay: restdayOvertimePay,
+      sundayOvertimePay: sundayOvertimePay,
       holidayOvertimePay: holidayOvertimePay,
       holidayWorkPay: holidayWorkPay,
       totalOvertimeHours: totalOvertimeHours,
@@ -2488,7 +2489,8 @@ function calculateMonthlySalaryInternal(employeeId, yearMonth) {
       otherAllowances: otherAllowances,
       weekdayOvertimePay: weekdayOvertimePay,
       restdayOvertimePay: restdayOvertimePay,
-      holidayWorkPay: holidayWorkPay, 
+      sundayOvertimePay: sundayOvertimePay,
+      holidayWorkPay: holidayWorkPay,
       holidayOvertimePay: holidayOvertimePay,
       totalOvertimeHours: totalOvertimeHours,
       laborFee: laborFee,              // ⭐ 使用設定表數值（可為 0）
