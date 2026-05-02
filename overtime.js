@@ -249,23 +249,24 @@ function bindOvertimeFormEvents() {
             const end = endTimeInput.value;
 
             if (start && end) {
-                const startTotalMin = parseInt(start.split(':')[0]) * 60 + parseInt(start.split(':')[1]);
-                const endTotalMin = parseInt(end.split(':')[0]) * 60 + parseInt(end.split(':')[1]);
-
-                let diffMin = endTotalMin - startTotalMin;
+                const [sh, sm] = start.split(':').map(Number);
+                const [eh, em] = end.split(':').map(Number);
+                let diffMin = (eh * 60 + em) - (sh * 60 + sm);
                 if (diffMin < 0) diffMin += 24 * 60;
 
-                let overtimeHours = 0;
-                if (diffMin >= 30) {
-                    overtimeHours = Math.floor(diffMin / 30) * 0.5;
-                }
-
+                const overtimeHours = diffMin >= 30 ? Math.floor(diffMin / 30) * 0.5 : 0;
                 document.getElementById('overtime-hours').value = overtimeHours.toFixed(1);
             }
         };
 
+        // input 事件在手機選完時間後立即觸發，change 事件等焦點離開才觸發
+        startTimeInput.addEventListener('input', calculateHours);
         startTimeInput.addEventListener('change', calculateHours);
+        endTimeInput.addEventListener('input', calculateHours);
         endTimeInput.addEventListener('change', calculateHours);
+
+        // 表單已有預填值時立即計算
+        calculateHours();
     }
 
     // 補償方式 radio 選項高亮
