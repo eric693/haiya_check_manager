@@ -82,102 +82,59 @@ async function refreshLeaveData() {
 }
 
 /**
- * ✅ 完全無限制版：計算工作時數（24小時制，不限制時段）
- * 
- * 修改內容：
- * 1. 移除 09:00-18:00 的時段限制
- * 2. 保留午休時間扣除（可選）
- * 3. 支援任意時段和跨日請假
+ * 計算請假工作時數（僅計算工作時段 11:00-19:00 內的時間，每日上限 8 小時）
  */
 function calculateWorkHours(startTime, endTime) {
     if (!startTime || !endTime) {
         return 0;
     }
-    
+
     const start = new Date(startTime);
     const end = new Date(endTime);
-    
-    // 檢查日期是否有效
+
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
         console.error('❌ 無效的日期格式');
         return 0;
     }
-    
-    // 檢查結束時間是否早於開始時間
+
     if (end <= start) {
         console.error('❌ 結束時間必須晚於開始時間');
         return 0;
     }
-    
-    console.log('📊 開始計算工時:', {
-        start: start.toISOString(),
-        end: end.toISOString()
-    });
-    
-    // ⭐ 午休時間設定（可選是否扣除）
-    const LUNCH_START = 12;         // 午休開始 12:00
-    const LUNCH_END = 13;           // 午休結束 13:00
-    const DEDUCT_LUNCH = false;     // 午休不扣除
-    
-    // 計算總毫秒數
-    const totalMs = end - start;
-    
-    // 轉換為小時
-    let totalHours = totalMs / (1000 * 60 * 60);
-    
-    console.log(`   ⏱️ 原始時數: ${totalHours.toFixed(2)} 小時`);
-    
-    // ⭐ 扣除午休時間（如果啟用）
-    if (DEDUCT_LUNCH) {
-        // 計算跨越的天數
-        const startDate = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-        const endDate = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-        
-        let lunchHoursToDeduct = 0;
-        
-        // 遍歷每一天，檢查是否跨越午休時間
-        let currentDate = new Date(startDate);
-        
-        while (currentDate <= endDate) {
-            // 當天的午休開始和結束時間
-            const lunchStartTime = new Date(currentDate);
-            lunchStartTime.setHours(LUNCH_START, 0, 0, 0);
-            
-            const lunchEndTime = new Date(currentDate);
-            lunchEndTime.setHours(LUNCH_END, 0, 0, 0);
-            
-            // 計算請假時間與午休時間的交集
-            const overlapStart = start > lunchStartTime ? start : lunchStartTime;
-            const overlapEnd = end < lunchEndTime ? end : lunchEndTime;
-            
-            // 如果有交集，計算重疊的時間
-            if (overlapStart < overlapEnd) {
-                const overlapMs = overlapEnd - overlapStart;
-                const overlapHours = overlapMs / (1000 * 60 * 60);
-                lunchHoursToDeduct += overlapHours;
-                
-                console.log(`   🍱 ${localDateStr(currentDate)} 扣除午休: ${overlapHours.toFixed(2)} 小時`);
-            }
-            
-            // 移到下一天
-            currentDate.setDate(currentDate.getDate() + 1);
+
+    // 工作時段：11:00 ~ 19:00
+    const WORK_START_HOUR = 11;
+    const WORK_END_HOUR = 19;
+
+    let totalHours = 0;
+
+    // 逐日計算與工作時段的交集
+    let currentDate = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const endDate = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+
+    while (currentDate <= endDate) {
+        const workStart = new Date(currentDate);
+        workStart.setHours(WORK_START_HOUR, 0, 0, 0);
+
+        const workEnd = new Date(currentDate);
+        workEnd.setHours(WORK_END_HOUR, 0, 0, 0);
+
+        const overlapStart = start > workStart ? start : workStart;
+        const overlapEnd = end < workEnd ? end : workEnd;
+
+        if (overlapStart < overlapEnd) {
+            const hours = (overlapEnd - overlapStart) / (1000 * 60 * 60);
+            totalHours += hours;
         }
-        
-        totalHours -= lunchHoursToDeduct;
-        
-        if (lunchHoursToDeduct > 0) {
-            console.log(`   🍱 總共扣除午休: ${lunchHoursToDeduct.toFixed(2)} 小時`);
-        }
+
+        currentDate.setDate(currentDate.getDate() + 1);
     }
-    
-    // 確保不會是負數
+
     totalHours = Math.max(0, totalHours);
-    
-    // 四捨五入到小數點後 2 位
     const finalHours = Math.round(totalHours * 100) / 100;
-    
+
     console.log(`   ✅ 最終工時: ${finalHours} 小時`);
-    
+
     return finalHours;
 }
 
@@ -261,7 +218,7 @@ function updateWorkHoursPreview() {
             const endHour = end.getHours();
             
             let timeInfo = '';
-            if (startHour < 9 || endHour > 18) {
+            if (startHour < 11 || endHour > 19) {
                 timeInfo = '（包含非標準工作時段）';
             }
             
@@ -283,23 +240,23 @@ function quickSelectTimeRange(type) {
     
     switch(type) {
         case '1h':
-            startTime = `${today}T09:00`;
-            endTime = `${today}T10:00`;
+            startTime = `${today}T11:00`;
+            endTime = `${today}T12:00`;
             break;
-            
+
         case '2h':
-            startTime = `${today}T09:00`;
-            endTime = `${today}T11:00`;
+            startTime = `${today}T11:00`;
+            endTime = `${today}T13:00`;
             break;
-            
+
         case '4h':
-            startTime = `${today}T13:00`;
-            endTime = `${today}T17:00`;
+            startTime = `${today}T11:00`;
+            endTime = `${today}T15:00`;
             break;
-            
+
         case '8h':
-            startTime = `${today}T09:00`;
-            endTime = `${today}T18:00`;
+            startTime = `${today}T11:00`;
+            endTime = `${today}T19:00`;
             break;
             
         default:

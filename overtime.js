@@ -24,7 +24,7 @@ async function initOvertimeTab() {
     bindOvertimeFormEvents();
 }
 
-const MAX_MONTHLY_OVERTIME = 46; // 每月加班時數上限
+const MAX_MONTHLY_OVERTIME = 100; // 每月加班時數上限
 
 /**
  * 載入員工的加班申請記錄（修改版 - 計算本月統計）
