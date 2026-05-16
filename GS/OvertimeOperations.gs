@@ -29,7 +29,7 @@ function initOvertimeSheet() {
 }
 
 /**
- * 後端計算加班時數（下班後超過30分鐘才起算，每30分鐘=0.5小時）
+ * 後端計算加班時數（滿30分鐘才起算，每30分鐘=0.5小時，直接計算全段時間）
  */
 function calculateOvertimeHoursFromTimes_(startTimeStr, endTimeStr) {
   const startParts = String(startTimeStr).split(':');
@@ -39,8 +39,8 @@ function calculateOvertimeHoursFromTimes_(startTimeStr, endTimeStr) {
   const endMin = parseInt(endParts[0]) * 60 + parseInt(endParts[1]);
   let diffMin = endMin - startMin;
   if (diffMin < 0) diffMin += 24 * 60;
-  if (diffMin > 30) {
-    return Math.floor((diffMin - 30) / 30) * 0.5;
+  if (diffMin >= 30) {
+    return Math.floor(diffMin / 30) * 0.5;
   }
   return 0;
 }
@@ -58,7 +58,7 @@ function submitOvertimeRequest(sessionToken, overtimeDate, startTime, endTime, h
     return {
       ok: false,
       code: "ERR_NO_OVERTIME",
-      msg: "下班後未超過30分鐘，不符合加班申請條件"
+      msg: "下班後未滿30分鐘，不符合加班申請條件"
     };
   }
 
