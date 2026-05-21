@@ -2896,3 +2896,80 @@ function checkSchedulingPermission(token) {
     return { ok: false, msg: error.message };
   }
 }
+
+// ==================== WiFi 打卡系統 Handler ====================
+
+function handleGetPunchSettings(params) {
+  try {
+    if (!params.token || !validateSession(params.token)) {
+      return { ok: false, msg: '未授權或 session 已過期' };
+    }
+    return getPunchSettings();
+  } catch (error) {
+    Logger.log('❌ handleGetPunchSettings 錯誤: ' + error);
+    return { ok: false, msg: error.message };
+  }
+}
+
+function handleSetPunchMode(params) {
+  try {
+    if (!params.token || !params.mode) {
+      return { ok: false, msg: '缺少必要參數' };
+    }
+    return setPunchMode(params.token, params.mode);
+  } catch (error) {
+    Logger.log('❌ handleSetPunchMode 錯誤: ' + error);
+    return { ok: false, msg: error.message };
+  }
+}
+
+function handleGetWifiLocations(params) {
+  try {
+    if (!params.token || !validateSession(params.token)) {
+      return { ok: false, msg: '未授權或 session 已過期' };
+    }
+    return getWifiLocations(params.token);
+  } catch (error) {
+    Logger.log('❌ handleGetWifiLocations 錯誤: ' + error);
+    return { ok: false, msg: error.message };
+  }
+}
+
+function handleAddWifiLocation(params) {
+  try {
+    const { token, name, ssid, note, allowedIp } = params;
+    if (!token || !name || !ssid) {
+      return { ok: false, msg: '缺少必要參數（token / name / ssid）' };
+    }
+    return addWifiLocation(token, name, ssid, note || '', allowedIp || '');
+  } catch (error) {
+    Logger.log('❌ handleAddWifiLocation 錯誤: ' + error);
+    return { ok: false, msg: error.message };
+  }
+}
+
+function handleDeleteWifiLocation(params) {
+  try {
+    const { token, rowIndex } = params;
+    if (!token || !rowIndex) {
+      return { ok: false, msg: '缺少必要參數（token / rowIndex）' };
+    }
+    return deleteWifiLocation(token, rowIndex);
+  } catch (error) {
+    Logger.log('❌ handleDeleteWifiLocation 錯誤: ' + error);
+    return { ok: false, msg: error.message };
+  }
+}
+
+function handleWifiPunch(params) {
+  try {
+    const { token, type, ssid, clientIp } = params;
+    if (!token || !type || !ssid) {
+      return { ok: false, msg: '缺少必要參數（token / type / ssid）' };
+    }
+    return punchWifi(token, type, ssid, clientIp || '');
+  } catch (error) {
+    Logger.log('❌ handleWifiPunch 錯誤: ' + error);
+    return { ok: false, msg: error.message };
+  }
+}

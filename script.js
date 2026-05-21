@@ -2271,12 +2271,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else if (tabId === 'admin-view') {
             fetchAndRenderReviewRequests();
             loadPendingOvertimeRequests();
-            loadPendingWorklogs();  // 
+            loadPendingWorklogs();
             loadPendingLeaveRequests();
             displayAdminAnnouncements();
             initAdminAnalysis();
             loadAllUsers();
             checkTriggerStatus();
+            initPunchModeSettings();
         } else if (tabId === 'overtime-view') {
             initOvertimeTab();
         } else if (tabId === 'leave-view') {
@@ -4214,6 +4215,39 @@ async function doPunch(type) {
         }
     }
     
+    // 取得打卡模式設定
+    let punchSettings = null;
+    try {
+        const settingsRes = await callApifetch('getPunchSettings');
+        if (settingsRes.ok) punchSettings = settingsRes;
+    } catch (e) {
+        console.warn('無法取得打卡設定，使用預設 GPS 模式');
+    }
+
+    const punchMode = punchSettings ? punchSettings.mode : 'gps';
+    const wifiLocations = punchSettings ? (punchSettings.wifiLocations || []) : [];
+
+    if (punchMode === 'wifi') {
+        // 純 WiFi 模式
+        generalButtonState(button, 'idle');
+        _isPunching = false;
+        if (wifiLocations.length === 0) {
+            showNotification('系統尚未設定 WiFi 打卡地點，請聯繫管理員', 'error');
+            return;
+        }
+        showWifiPunchModal(type, wifiLocations);
+        return;
+    }
+
+    if (punchMode === 'both' && wifiLocations.length > 0) {
+        // GPS + WiFi 模式：顯示選擇對話框
+        generalButtonState(button, 'idle');
+        _isPunching = false;
+        showPunchMethodModal(type, wifiLocations);
+        return;
+    }
+
+    // GPS 模式（預設）
     if (!navigator.geolocation) {
         showNotification(t("ERROR_GEOLOCATION", { msg: "您的瀏覽器不支援地理位置功能。" }), "error");
         generalButtonState(button, 'idle');
@@ -4241,13 +4275,171 @@ async function doPunch(type) {
             console.error(err);
         } finally {
             generalButtonState(button, 'idle');
-            _isPunching = false;  // 🔓 釋放鎖
+            _isPunching = false;
         }
     }, (err) => {
         showNotification(t("ERROR_GEOLOCATION", { msg: err.message }), "error");
         generalButtonState(button, 'idle');
-        _isPunching = false;  // 🔓 釋放鎖（定位失敗也要釋放）
+        _isPunching = false;
     });
+}
+
+/**
+ * 顯示打卡方式選擇 Modal（both 模式）
+ */
+function showPunchMethodModal(type, wifiLocations) {
+    const existing = document.getElementById('punch-method-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'punch-method-modal';
+    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60';
+    modal.innerHTML = `
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4">
+            <h3 class="text-xl font-bold text-gray-800 dark:text-white mb-1">
+                ${type === '上班' ? '🟢' : '🔴'} ${type}打卡
+            </h3>
+            <p class="text-gray-500 dark:text-gray-400 text-sm mb-5">請選擇打卡方式</p>
+            <div class="space-y-3">
+                <button id="pm-gps-btn"
+                    class="w-full py-3 px-4 rounded-xl font-bold text-white bg-blue-500 hover:bg-blue-600 transition-colors flex items-center justify-center gap-2">
+                    <span>📍</span> GPS 定位打卡
+                </button>
+                <button id="pm-wifi-btn"
+                    class="w-full py-3 px-4 rounded-xl font-bold text-white bg-sky-500 hover:bg-sky-600 transition-colors flex items-center justify-center gap-2">
+                    <span>📶</span> WiFi 打卡
+                </button>
+            </div>
+            <button id="pm-cancel-btn" class="w-full mt-4 py-2 text-gray-500 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-200">
+                取消
+            </button>
+        </div>`;
+
+    document.body.appendChild(modal);
+
+    document.getElementById('pm-cancel-btn').onclick = () => modal.remove();
+    document.getElementById('pm-gps-btn').onclick = () => {
+        modal.remove();
+        doPunchGps(type);
+    };
+    document.getElementById('pm-wifi-btn').onclick = () => {
+        modal.remove();
+        showWifiPunchModal(type, wifiLocations);
+    };
+}
+
+/**
+ * 顯示 WiFi 打卡 Modal（選擇 SSID）
+ */
+function showWifiPunchModal(type, wifiLocations) {
+    const existing = document.getElementById('wifi-punch-modal');
+    if (existing) existing.remove();
+
+    const options = wifiLocations.map(loc =>
+        `<button class="wifi-ssid-btn w-full py-3 px-4 rounded-xl font-semibold text-white bg-sky-500 hover:bg-sky-600 transition-colors flex items-center gap-2 text-left"
+            data-ssid="${loc.ssid}" data-name="${loc.name}">
+            <span>📶</span>
+            <span class="flex-1">${loc.name}</span>
+            <span class="text-xs opacity-75">${loc.ssid}</span>
+        </button>`
+    ).join('');
+
+    const modal = document.createElement('div');
+    modal.id = 'wifi-punch-modal';
+    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60';
+    modal.innerHTML = `
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4">
+            <h3 class="text-xl font-bold text-gray-800 dark:text-white mb-1">
+                📶 WiFi ${type}打卡
+            </h3>
+            <p class="text-gray-500 dark:text-gray-400 text-sm mb-5">請選擇您目前連線的 WiFi 網路</p>
+            <div class="space-y-3">${options}</div>
+            <button id="wm-cancel-btn" class="w-full mt-4 py-2 text-gray-500 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-200">
+                取消
+            </button>
+        </div>`;
+
+    document.body.appendChild(modal);
+
+    document.getElementById('wm-cancel-btn').onclick = () => modal.remove();
+
+    modal.querySelectorAll('.wifi-ssid-btn').forEach(btn => {
+        btn.onclick = async () => {
+            const ssid = btn.dataset.ssid;
+            modal.remove();
+            await doWifiPunch(type, ssid);
+        };
+    });
+}
+
+/**
+ * 執行 GPS 打卡（從 both 模式中選出 GPS 後呼叫）
+ */
+async function doPunchGps(type) {
+    if (_isPunching) return;
+    _isPunching = true;
+
+    const punchButtonId = type === '上班' ? 'punch-in-btn' : 'punch-out-btn';
+    const button = document.getElementById(punchButtonId);
+    if (button) generalButtonState(button, 'processing', '打卡中...');
+
+    if (!navigator.geolocation) {
+        showNotification('您的瀏覽器不支援地理位置功能', 'error');
+        if (button) generalButtonState(button, 'idle');
+        _isPunching = false;
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const action = `punch&type=${encodeURIComponent(type)}&lat=${lat}&lng=${lng}&note=${encodeURIComponent(navigator.userAgent)}`;
+        try {
+            const res = await callApifetch(action);
+            const msg = t(res.code || "UNKNOWN_ERROR", res.params || {});
+            showNotification(msg, res.ok ? "success" : "error");
+            if (res.ok && type === '上班') clearShiftCache();
+        } catch (err) {
+            console.error(err);
+        } finally {
+            if (button) generalButtonState(button, 'idle');
+            _isPunching = false;
+        }
+    }, (err) => {
+        showNotification('定位失敗：' + err.message, 'error');
+        if (button) generalButtonState(button, 'idle');
+        _isPunching = false;
+    });
+}
+
+/**
+ * 執行 WiFi 打卡
+ */
+async function doWifiPunch(type, ssid) {
+    if (_isPunching) return;
+    _isPunching = true;
+
+    showNotification('WiFi打卡處理中...', 'info');
+
+    try {
+        let clientIp = '';
+        try {
+            const ipRes = await fetch('https://api.ipify.org?format=json');
+            const ipData = await ipRes.json();
+            clientIp = ipData.ip || '';
+        } catch (_) { /* ignore — IP verification is optional */ }
+
+        const action = `wifiPunch&type=${encodeURIComponent(type)}&ssid=${encodeURIComponent(ssid)}&clientIp=${encodeURIComponent(clientIp)}`;
+        const res = await callApifetch(action);
+        const msg = t(res.code || "UNKNOWN_ERROR", res.params || {});
+        showNotification(msg || (res.ok ? 'WiFi打卡成功' : 'WiFi打卡失敗'), res.ok ? "success" : "error");
+        if (res.ok && type === '上班') clearShiftCache();
+    } catch (err) {
+        console.error(err);
+        showNotification('WiFi打卡失敗', 'error');
+    } finally {
+        _isPunching = false;
+    }
 }
 
 /**
@@ -5708,5 +5900,148 @@ async function deleteShiftTypeAdmin(rowIndex) {
         }
     } catch (err) {
         showNotification('刪除失敗，請稍後再試', 'error');
+    }
+}
+
+// ==================== WiFi 打卡設定管理 ====================
+
+async function initPunchModeSettings() {
+    const token = localStorage.getItem('sessionToken') || '';
+    if (!token) return;
+
+    try {
+        const res = await callApifetch(`getPunchSettings&token=${encodeURIComponent(token)}`);
+        if (!res.ok) return;
+
+        renderPunchModeButtons(res.mode);
+        renderWifiLocationsList(res.wifiLocations || []);
+        setupPunchModeButtons(token);
+        setupAddWifiLocation(token);
+    } catch (e) {
+        console.error('initPunchModeSettings 錯誤:', e);
+    }
+}
+
+function renderPunchModeButtons(currentMode) {
+    const modeLabels = { gps: '📍 僅 GPS', wifi: '📶 僅 WiFi', both: '🔀 兩者皆可' };
+    const modeColors = { gps: 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300', wifi: 'border-sky-500 bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300', both: 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' };
+    const modeDesc = { gps: '目前模式：📍 GPS 定位打卡', wifi: '目前模式：📶 WiFi 打卡', both: '目前模式：🔀 GPS + WiFi 兩種方式' };
+
+    document.querySelectorAll('.punch-mode-btn').forEach(btn => {
+        const mode = btn.dataset.mode;
+        if (mode === currentMode) {
+            btn.className = `punch-mode-btn py-2 px-3 rounded-lg border-2 text-sm font-semibold transition-all ${modeColors[mode]}`;
+        } else {
+            btn.className = 'punch-mode-btn py-2 px-3 rounded-lg border-2 text-sm font-semibold transition-all border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-gray-400';
+        }
+    });
+
+    const statusEl = document.getElementById('punch-mode-status');
+    if (statusEl) statusEl.textContent = modeDesc[currentMode] || '';
+}
+
+function setupPunchModeButtons(token) {
+    document.querySelectorAll('.punch-mode-btn').forEach(btn => {
+        btn.onclick = async () => {
+            const mode = btn.dataset.mode;
+            const params = new URLSearchParams({ token, mode });
+            try {
+                const res = await callApifetch(`setPunchMode&${params.toString()}`);
+                if (res.ok) {
+                    renderPunchModeButtons(mode);
+                    showNotification('打卡模式已更新', 'success');
+                } else {
+                    showNotification(res.msg || '更新失敗', 'error');
+                }
+            } catch (e) {
+                showNotification('更新失敗', 'error');
+            }
+        };
+    });
+}
+
+function renderWifiLocationsList(locations) {
+    const container = document.getElementById('wifi-locations-list');
+    if (!container) return;
+
+    if (locations.length === 0) {
+        container.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400 text-center py-2">尚未設定任何 WiFi 打卡地點</p>';
+        return;
+    }
+
+    const token = localStorage.getItem('sessionToken') || '';
+    container.innerHTML = locations.map(loc => `
+        <div class="flex items-center justify-between bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-lg p-3">
+            <div>
+                <p class="font-semibold text-gray-800 dark:text-white text-sm">📶 ${loc.name}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">SSID: ${loc.ssid}${loc.note ? ' — ' + loc.note : ''}</p>
+                ${loc.allowedIp ? `<p class="text-xs text-blue-500 dark:text-blue-400">IP: ${loc.allowedIp}</p>` : ''}
+            </div>
+            <button onclick="deleteWifiLocationAdmin(${loc.rowIndex})"
+                class="ml-3 px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-xs font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors">
+                刪除
+            </button>
+        </div>
+    `).join('');
+}
+
+function setupAddWifiLocation(token) {
+    const btn = document.getElementById('add-wifi-location-btn');
+    if (!btn) return;
+
+    btn.onclick = async () => {
+        const name = (document.getElementById('wifi-loc-name').value || '').trim();
+        const ssid = (document.getElementById('wifi-loc-ssid').value || '').trim();
+        const note = (document.getElementById('wifi-loc-note').value || '').trim();
+        const allowedIp = (document.getElementById('wifi-loc-ip').value || '').trim();
+
+        if (!name || !ssid) {
+            showNotification('請填寫地點名稱和 WiFi 名稱', 'error');
+            return;
+        }
+
+        const params = new URLSearchParams({ token, name, ssid, note, allowedIp });
+        try {
+            const res = await callApifetch(`addWifiLocation&${params.toString()}`);
+            if (res.ok) {
+                showNotification('已新增 WiFi 地點', 'success');
+                document.getElementById('wifi-loc-name').value = '';
+                document.getElementById('wifi-loc-ssid').value = '';
+                document.getElementById('wifi-loc-note').value = '';
+                document.getElementById('wifi-loc-ip').value = '';
+                await refreshWifiLocationsList(token);
+            } else {
+                showNotification(res.msg || '新增失敗', 'error');
+            }
+        } catch (e) {
+            showNotification('新增失敗', 'error');
+        }
+    };
+}
+
+async function deleteWifiLocationAdmin(rowIndex) {
+    if (!confirm('確定要刪除此 WiFi 打卡地點？')) return;
+    const token = localStorage.getItem('sessionToken') || '';
+    const params = new URLSearchParams({ token, rowIndex });
+
+    try {
+        const res = await callApifetch(`deleteWifiLocation&${params.toString()}`);
+        if (res.ok) {
+            showNotification('已刪除', 'success');
+            await refreshWifiLocationsList(token);
+        } else {
+            showNotification(res.msg || '刪除失敗', 'error');
+        }
+    } catch (e) {
+        showNotification('刪除失敗', 'error');
+    }
+}
+
+async function refreshWifiLocationsList(token) {
+    try {
+        const res = await callApifetch(`getWifiLocations&token=${encodeURIComponent(token)}`);
+        if (res.ok) renderWifiLocationsList(res.locations || []);
+    } catch (e) {
+        console.error('refreshWifiLocationsList 錯誤:', e);
     }
 }

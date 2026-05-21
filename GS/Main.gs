@@ -34,6 +34,8 @@ function doGet(e) {
       // ==================== 打卡系統 ====================
       case "punch":
         return respond1(handlePunch(e.parameter));
+      case "wifiPunch":
+        return respond1(handleWifiPunch(e.parameter));
       case "adjustPunch":
         return respond1(handleAdjustPunch(e.parameter));
       case "getAbnormalRecords":
@@ -46,6 +48,18 @@ function doGet(e) {
         return respond1(handleAddLocation(e.parameter));
       case "getLocations":
         return respond1(handleGetLocation());
+
+      // ==================== WiFi 打卡設定 ====================
+      case "getPunchSettings":
+        return respond1(handleGetPunchSettings(e.parameter));
+      case "setPunchMode":
+        return respond1(handleSetPunchMode(e.parameter));
+      case "getWifiLocations":
+        return respond1(handleGetWifiLocations(e.parameter));
+      case "addWifiLocation":
+        return respond1(handleAddWifiLocation(e.parameter));
+      case "deleteWifiLocation":
+        return respond1(handleDeleteWifiLocation(e.parameter));
       
       case "setEmployeeBasicInfo":
         return respond1(handleSetEmployeeBasicInfo(e.parameter));

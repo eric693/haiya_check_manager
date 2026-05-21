@@ -1137,6 +1137,68 @@
                         
                         <div id="admin-announcements-list" class="space-y-3"></div>
                     </div>
+
+                    <!-- ==================== 打卡模式設定 ==================== -->
+                    <div class="card p-6">
+                        <h2 class="text-xl font-bold text-gray-800 dark:text-white mb-1">📶 打卡方式設定</h2>
+                        <p class="text-gray-500 dark:text-gray-400 mb-4">設定員工可使用的打卡方式（GPS 定位 / WiFi / 兩者皆可）</p>
+
+                        <!-- 打卡模式選擇 -->
+                        <div class="mb-5">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">打卡方式</label>
+                            <div class="grid grid-cols-3 gap-2">
+                                <button id="punch-mode-gps"
+                                    data-mode="gps"
+                                    class="punch-mode-btn py-2 px-3 rounded-lg border-2 text-sm font-semibold transition-all border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-blue-400">
+                                    📍 僅 GPS
+                                </button>
+                                <button id="punch-mode-wifi"
+                                    data-mode="wifi"
+                                    class="punch-mode-btn py-2 px-3 rounded-lg border-2 text-sm font-semibold transition-all border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-sky-400">
+                                    📶 僅 WiFi
+                                </button>
+                                <button id="punch-mode-both"
+                                    data-mode="both"
+                                    class="punch-mode-btn py-2 px-3 rounded-lg border-2 text-sm font-semibold transition-all border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-indigo-400">
+                                    🔀 兩者皆可
+                                </button>
+                            </div>
+                            <p id="punch-mode-status" class="text-xs text-gray-500 dark:text-gray-400 mt-2">載入中...</p>
+                        </div>
+
+                        <!-- WiFi 地點管理 -->
+                        <div id="wifi-locations-section">
+                            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                                <h3 class="font-semibold text-gray-800 dark:text-white mb-3">WiFi 打卡地點</h3>
+
+                                <!-- 新增表單 -->
+                                <div class="space-y-2 mb-4">
+                                    <input type="text" id="wifi-loc-name"
+                                        placeholder="地點名稱（例：台北辦公室）"
+                                        class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm">
+                                    <input type="text" id="wifi-loc-ssid"
+                                        placeholder="WiFi 名稱（SSID，例：Office-WiFi）"
+                                        class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm">
+                                    <input type="text" id="wifi-loc-note"
+                                        placeholder="備註（可選）"
+                                        class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm">
+                                    <input type="text" id="wifi-loc-ip"
+                                        placeholder="公司對外 IP（可留空，空則不驗證，多個 IP 以逗號分隔）"
+                                        class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm">
+                                    <button id="add-wifi-location-btn"
+                                        class="w-full py-2 px-4 rounded-lg font-bold btn-primary text-sm">
+                                        + 新增 WiFi 地點
+                                    </button>
+                                </div>
+
+                                <!-- 地點清單 -->
+                                <div id="wifi-locations-list" class="space-y-2">
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 text-center py-2">載入中...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="card p-6">
                         <h2 data-i18n="PENDING_REQUESTS_TITLE" class="text-xl font-bold text-gray-800 dark:text-white mb-1">待審核請求</h2>
                         <p data-i18n="PENDING_REQUESTS_DESCRIPTION" class="text-gray-500 dark:text-gray-400 mb-4">請處理員工提出的補打卡或虛擬卡請求。</p>
