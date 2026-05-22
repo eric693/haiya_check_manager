@@ -7273,7 +7273,7 @@ function sendPunchMethodChoice(replyToken, employeeName, punchType, wifiLocation
       color: '#2196F3',
       action: {
         type: 'message',
-        label: '📍 GPS 定位打卡',
+        label: 'GPS 定位打卡',
         text: 'GPS打卡'
       }
     }
@@ -7287,7 +7287,7 @@ function sendPunchMethodChoice(replyToken, employeeName, punchType, wifiLocation
       color: '#0ea5e9',
       action: {
         type: 'message',
-        label: '📶 WiFi 打卡',
+        label: 'WiFi 打卡',
         text: 'WIFI選擇:' + punchType
       }
     });
@@ -7304,7 +7304,7 @@ function sendPunchMethodChoice(replyToken, employeeName, punchType, wifiLocation
         layout: 'vertical',
         contents: [{
           type: 'text',
-          text: `${punchType === '上班' ? '🟢' : '🔴'} ${punchType}打卡`,
+          text: `${punchType}打卡`,
           weight: 'bold',
           size: 'xl',
           color: '#FFFFFF'
@@ -7345,7 +7345,7 @@ function sendPunchMethodChoice(replyToken, employeeName, punchType, wifiLocation
           height: 'sm',
           action: {
             type: 'message',
-            label: '❌ 取消打卡',
+            label: '取消打卡',
             text: '取消打卡'
           }
         }]
@@ -7369,7 +7369,7 @@ function sendWifiLocationSelection(replyToken, employeeName, punchType, wifiLoca
     color: '#0ea5e9',
     action: {
       type: 'message',
-      label: '📶 ' + loc.name,
+      label: loc.name,
       text: 'WIFI打卡:' + loc.ssid
     }
   }));
@@ -7385,7 +7385,7 @@ function sendWifiLocationSelection(replyToken, employeeName, punchType, wifiLoca
         layout: 'vertical',
         contents: [{
           type: 'text',
-          text: `📶 WiFi ${punchType}打卡`,
+          text: `WiFi ${punchType}打卡`,
           weight: 'bold',
           size: 'xl',
           color: '#FFFFFF'
@@ -7426,7 +7426,7 @@ function sendWifiLocationSelection(replyToken, employeeName, punchType, wifiLoca
           height: 'sm',
           action: {
             type: 'message',
-            label: '❌ 取消打卡',
+            label: '取消打卡',
             text: '取消打卡'
           }
         }]
