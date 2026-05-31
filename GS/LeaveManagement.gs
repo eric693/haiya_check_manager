@@ -367,9 +367,46 @@ function getLeaveBalance(sessionToken) {
         if (balance.hireDate) {
           balance.hireDate = formatDate(balance.hireDate);
         }
+
+        // 計算各假別使用期限
+        const today = new Date();
+        const yearEnd = Utilities.formatDate(
+          new Date(today.getFullYear(), 11, 31),
+          Session.getScriptTimeZone(),
+          'yyyy-MM-dd'
+        );
+
+        const leaveExpiry = {
+          // 年度型：當年 12/31 到期
+          SICK_LEAVE: yearEnd,
+          PERSONAL_LEAVE: yearEnd,
+          HOSPITALIZATION_LEAVE: yearEnd,
+          MENSTRUAL_LEAVE: yearEnd,
+          FAMILY_CARE_LEAVE: yearEnd,
+          // 事件型：婚喪產假需於事件發生後請完
+          MARRIAGE_LEAVE: 'EVENT',
+          BEREAVEMENT_LEAVE: 'EVENT',
+          MATERNITY_LEAVE: 'EVENT',
+          PATERNITY_LEAVE: 'EVENT'
+        };
+
+        // 特休假：依到職週年日計算當期到期日
+        if (balance.hireDate) {
+          try {
+            const annualLeaveInfo = getCurrentAnnualLeaveInfo(new Date(balance.hireDate));
+            if (annualLeaveInfo.periodEnd) {
+              leaveExpiry.ANNUAL_LEAVE = formatDate(annualLeaveInfo.periodEnd);
+            }
+          } catch (e) {
+            Logger.log('⚠️ 計算特休到期日失敗: ' + e.message);
+          }
+        }
+
+        balance.leaveExpiry = leaveExpiry;
+
         Logger.log('📋 假期餘額（小時）:');
         Logger.log(JSON.stringify(balance, null, 2));
-        
+
         return {
           ok: true,
           balance: balance

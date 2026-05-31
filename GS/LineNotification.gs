@@ -1594,10 +1594,14 @@ function notifyAllAdmins_(message) {
   }
   adminIds.forEach(adminId => {
     try {
-      sendLineNotification_(adminId, message);
-      Logger.log('✅ 已通知管理員: ' + adminId);
+      const result = sendLineNotification_(adminId, message);
+      if (result.ok) {
+        Logger.log('✅ 已通知管理員: ' + adminId);
+      } else {
+        Logger.log('❌ 通知管理員失敗 (' + adminId + '): ' + result.error);
+      }
     } catch (err) {
-      Logger.log('⚠️ 通知管理員失敗 (' + adminId + '): ' + err.message);
+      Logger.log('⚠️ 通知管理員例外 (' + adminId + '): ' + err.message);
     }
   });
 }
@@ -1774,4 +1778,68 @@ function notifyAdminsNewOvertimeRequest(employeeName, overtimeDate, startTime, e
     employeeName, overtimeDate, startTime, endTime, hours, reason
   );
   notifyAllAdmins_(message);
+}
+
+// ==================== 管理員通知診斷工具 ====================
+
+/**
+ * 診斷管理員通知問題：在 GAS 編輯器直接執行此函式，查看 Execution log 找出原因
+ */
+function debugAdminNotification() {
+  Logger.log('========== 開始診斷管理員通知 ==========');
+
+  // 1. 檢查 LINE_CHANNEL_ACCESS_TOKEN
+  const token = PropertiesService.getScriptProperties().getProperty('LINE_CHANNEL_ACCESS_TOKEN');
+  if (!token) {
+    Logger.log('❌ LINE_CHANNEL_ACCESS_TOKEN 未設定！請至「專案設定 > 指令碼屬性」新增');
+    return;
+  }
+  Logger.log('✅ TOKEN 存在，長度: ' + token.length + '，開頭: ' + token.substring(0, 10) + '...');
+
+  // 2. 列出員工名單中所有管理員
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_EMPLOYEES);
+  if (!sheet) {
+    Logger.log('❌ 找不到工作表: ' + SHEET_EMPLOYEES);
+    return;
+  }
+  const values = sheet.getDataRange().getValues();
+  Logger.log('員工名單共 ' + (values.length - 1) + ' 筆資料（不含標題）');
+
+  let adminCount = 0;
+  for (let i = 1; i < values.length; i++) {
+    const userId = values[i][0];
+    const name   = values[i][2];
+    const dept   = values[i][5];
+    const status = values[i][7];
+    const isAdmin  = dept === '管理員';
+    const isActive = status === '啟用';
+    if (isAdmin || dept) {
+      Logger.log('列' + (i+1) + ': ' + name + ' | 部門=' + JSON.stringify(dept) + ' | 狀態=' + JSON.stringify(status) + ' | userId=' + userId);
+    }
+    if (isAdmin && isActive && userId) adminCount++;
+  }
+  Logger.log('符合條件的管理員數量: ' + adminCount);
+
+  if (adminCount === 0) {
+    Logger.log('❌ 沒有找到管理員！請確認員工名單 F 欄為「管理員」且 H 欄為「啟用」');
+    return;
+  }
+
+  // 3. 實際發送測試通知給每位管理員
+  const adminIds = getAdminUserIds_();
+  adminIds.forEach(adminId => {
+    Logger.log('📤 發送測試通知給: ' + adminId);
+    const testMsg = {
+      type: "text",
+      text: "[診斷測試] 管理員通知功能正常 ✅"
+    };
+    const result = sendLineNotification_(adminId, testMsg);
+    if (result.ok) {
+      Logger.log('✅ 發送成功: ' + adminId);
+    } else {
+      Logger.log('❌ 發送失敗: ' + adminId + ' 原因: ' + result.error);
+    }
+  });
+
+  Logger.log('========== 診斷完成 ==========');
 }
