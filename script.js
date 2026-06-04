@@ -5641,75 +5641,68 @@ let _isSubmittingHistory = false;
  */
 async function submitHistoryAdjust() {
     if (_isSubmittingHistory) { showNotification('處理中，請勿重複點擊', 'warning'); return; }
-    _isSubmittingHistory = true;
+
     const dateInput = document.getElementById('history-adjust-date');
     const typeInput = document.getElementById('history-adjust-type');
     const timeInput = document.getElementById('history-adjust-time');
     const reasonInput = document.getElementById('history-adjust-reason');
     const submitBtn = document.getElementById('submit-history-adjust-btn');
-    
+
     const date = dateInput.value;
     const type = typeInput.value;
     const time = timeInput.value;
     const reason = reasonInput.value.trim();
-    
-    // ===== 驗證 =====
-    
-    // 1. 檢查日期
+
+    // ===== 驗證（驗證失敗直接 return，此時 flag 仍為 false）=====
+
     if (!date) {
         showNotification('請選擇補打日期', 'error');
         dateInput.focus();
         return;
     }
-    
-    // 2. 檢查類型
+
     if (!type) {
         showNotification('請選擇補打類型', 'error');
         typeInput.focus();
         return;
     }
-    
-    // 3. 檢查時間
+
     if (!time) {
         showNotification('請選擇實際打卡時間', 'error');
         timeInput.focus();
         return;
     }
-    
-    // 4. 檢查理由長度
-    if (reason.length < 10) {
-        showNotification('補打原因至少需要 10 個字，請詳細說明', 'error');
+
+    if (reason.length < 2) {
+        showNotification('補打原因至少需要 2 個字', 'error');
         reasonInput.focus();
         return;
     }
-    
-    // 5. 驗證日期範圍（本月內且不能未來）
+
     const selectedDate = new Date(date);
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    
+
     if (selectedDate < monthStart) {
         showNotification('只能補打本月的打卡記錄', 'error');
         return;
     }
-    
+
     if (selectedDate > today) {
         showNotification('不能補打未來的日期', 'error');
         return;
     }
-    
-    // 6. 檢查是否是今天（提示使用當日修正）
+
     if (selectedDate.getTime() === today.getTime()) {
         if (!confirm('您選擇的是今天的日期，建議使用「當日異常修正」功能更快速。\n\n確定要繼續使用歷史補打卡嗎？')) {
             return;
         }
     }
-    
-    // ===== 提交 =====
-    
-    const loadingText = '提交中...';
-    generalButtonState(submitBtn, 'processing', loadingText);
+
+    // ===== 驗證全部通過後才鎖定按鈕 =====
+    _isSubmittingHistory = true;
+    generalButtonState(submitBtn, 'processing', '提交中...');
     
     try {
         const sessionToken = localStorage.getItem("sessionToken");
@@ -5762,6 +5755,7 @@ async function submitHistoryAdjust() {
         }
         
     } finally {
+        _isSubmittingHistory = false;
         generalButtonState(submitBtn, 'idle');
     }
 }
