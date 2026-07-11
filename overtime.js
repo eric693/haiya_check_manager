@@ -347,13 +347,13 @@ async function submitOvertimeRequest(overtimeDate, startTime, endTime, hours, re
             document.getElementById('overtime-end-time').value = '';
             document.getElementById('overtime-hours').value = '';
             document.getElementById('overtime-reason').value = '';
-            const payRadio = document.getElementById('comp-type-pay');
-            if (payRadio) payRadio.checked = true;
+            const compLeaveRadio = document.getElementById('comp-type-comp-leave');
+            if (compLeaveRadio) compLeaveRadio.checked = true;
             updateCompensationOptionStyle();
 
             await loadEmployeeOvertimeRecords();
         } else {
-            showNotification(t(res.code) || res.msg || t('ERROR_SUBMIT_OVERTIME') || '提交失敗', 'error');
+            showNotification(tOrMsg(res, t('ERROR_SUBMIT_OVERTIME') || '提交失敗'), 'error');
         }
     } catch (err) {
         console.error(err);
@@ -538,7 +538,7 @@ async function handleOvertimeReview(button, action) {
                 }, 300);
             }
         } else {
-            showNotification(t(res.code) || res.msg || '審核失敗', 'error');
+            showNotification(tOrMsg(res, '審核失敗'), 'error');
             allBtnsInRow.forEach(btn => {
                 btn.disabled = false;
                 btn.classList.remove('opacity-50', 'cursor-not-allowed');

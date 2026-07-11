@@ -42,6 +42,15 @@ function t(code, params = {}) {
     return text;
 }
 
+// 顯示後端回應的錯誤訊息：有翻譯就用翻譯，沒有翻譯就用後端給的 msg，
+// 避免使用者看到像 "ERR_DUPLICATE_ADJUST_PUNCH" 這種原始代碼而誤以為系統卡住
+function tOrMsg(res, fallback) {
+    if (!res) return fallback;
+    if (res.code && translations[res.code]) return t(res.code, res.params);
+    if (res.msg) return res.msg;
+    return fallback;
+}
+
 // renderTranslations 可接受一個容器參數
 function renderTranslations(container = document) {
     // 翻譯網頁標題（只在整頁翻譯時執行）
@@ -1202,7 +1211,7 @@ async function submitAdjustPunch(date, type, note) {
             // 關閉對話框
             closeAdjustDialog();
         } else {
-            showNotification(t(res.code) || "補打卡失敗", "error");
+            showNotification(tOrMsg(res, "補打卡失敗"), "error");
         }
     } catch (err) {
         console.error('補打卡錯誤:', err);
@@ -2673,7 +2682,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     await checkAbnormal();
                     adjustmentFormContainer.innerHTML = '';
                 } else {
-                    showNotification(t(res.code) || "補打卡失敗", "error");
+                    showNotification(tOrMsg(res, "補打卡失敗"), "error");
                 }
                 
             } catch (err) {
@@ -5504,7 +5513,7 @@ async function submitAdjustToday() {
             // 重新載入異常記錄
             await checkAbnormal();
         } else {
-            showNotification(t(res.code) || '修正失敗', 'error');
+            showNotification(tOrMsg(res, '修正失敗'), 'error');
         }
         
     } catch (err) {
@@ -5742,7 +5751,7 @@ async function submitHistoryAdjust() {
             // 重新載入異常記錄
             await checkAbnormal();
         } else {
-            showNotification(t(res.code) || '提交失敗', 'error');
+            showNotification(tOrMsg(res, '提交失敗'), 'error');
         }
         
     } catch (err) {

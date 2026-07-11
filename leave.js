@@ -284,13 +284,13 @@ async function submitLeaveApplication() {
         console.error('❌ 表單驗證失敗');
         return;
     }
-    
+
     const leaveType = document.getElementById('leave-type').value;
     const startTime = document.getElementById('leave-start-datetime').value;
     const endTime = document.getElementById('leave-end-datetime').value;
     const reason = document.getElementById('leave-reason').value;
     const workHours = calculateWorkHours(startTime, endTime);
-    
+
     console.log('📋 提交資料:', {
         leaveType,
         startTime,
@@ -298,38 +298,43 @@ async function submitLeaveApplication() {
         workHours,
         reason
     });
-    
+
+    // ⭐ 立即顯示處理中狀態，避免使用者以為按鈕沒反應
+    const button = document.getElementById('submit-leave-btn');
+    if (button) {
+        button.disabled = true;
+        button.textContent = '處理中...';
+    }
+
     // 檢查假期餘額
     try {
         const balanceRes = await callApifetch('getLeaveBalance');
-        
+
         if (balanceRes.ok && balanceRes.balance) {
             const availableHours = balanceRes.balance[leaveType] || 0;
-            
+
             console.log(`💰 假期餘額檢查:`, {
                 假別: leaveType,
                 可用小時: availableHours,
                 申請小時: workHours
             });
-            
+
             if (workHours > availableHours) {
                 showNotification(
                     `餘額不足！${t(leaveType)} 剩餘 ${availableHours} 小時，但您申請了 ${workHours} 小時`,
                     'error'
                 );
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = '提交請假申請';
+                }
                 return;
             }
         }
     } catch (error) {
         console.error('❌ 檢查餘額失敗:', error);
     }
-    
-    const button = document.getElementById('submit-leave-btn');
-    if (button) {
-        button.disabled = true;
-        button.textContent = '處理中...';
-    }
-    
+
     try {
         const response = await callApifetch(
             `submitLeave&leaveType=${encodeURIComponent(leaveType)}` +
