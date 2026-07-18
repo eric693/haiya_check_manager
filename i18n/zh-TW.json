@@ -273,6 +273,10 @@
     "EXPORT_FAILED": "匯出失敗，請稍後再試",
     "EXPORT_NO_DATA": "本月沒有出勤記錄",
 
+    "OVERVIEW_REPORT_TITLE": "整合報表：排班／請假／加班總覽",
+    "OVERVIEW_REPORT_DESC": "以每月 1 日至月底的表格，一目瞭然查看每位員工的排班、排休、請假與加班狀況",
+    "BTN_OVERVIEW_REPORT": "開啟整合報表",
+
     "ADMIN_EXPORT_TITLE": "匯出報表",
     "ADMIN_EXPORT_DESCRIPTION": "匯出所有員工的出勤報表",
     "ADMIN_EXPORT_MONTH_LABEL": "選擇月份",

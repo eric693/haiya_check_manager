@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>整合報表 - 出勤管家</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+        }
+
+        .report-container {
+            max-width: 1600px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .page-header h1 {
+            margin: 0;
+            color: #333;
+            font-size: 24px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .btn-primary { background: #4285f4; color: white; }
+        .btn-primary:hover { background: #357ae8; }
+        .btn-secondary { background: #e0e0e0; color: #333; }
+        .btn-secondary:hover { background: #d0d0d0; }
+
+        /* ===== 權限阻擋畫面 ===== */
+        #permission-denied {
+            display: none;
+            text-align: center;
+            padding: 80px 20px;
+            color: #666;
+        }
+        #permission-denied .icon { font-size: 20px; font-weight: 700; color: #999; margin-bottom: 16px; }
+
+        #report-body { display: none; }
+
+        /* ===== 月份切換 ===== */
+        .month-bar {
+            background: white;
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .month-selector {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .month-btn {
+            padding: 8px 14px;
+            background: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .month-btn:hover { background: #357abd; }
+
+        .current-month {
+            font-size: 20px;
+            font-weight: 700;
+            color: #333;
+            min-width: 130px;
+            text-align: center;
+        }
+
+        .today-btn {
+            padding: 8px 16px;
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .today-btn:hover { background: #e8e8e8; }
+
+        /* ===== 統計卡片 ===== */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 14px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 18px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border-left: 4px solid #4285f4;
+        }
+        .stat-card.stat-shift { border-left-color: #2196f3; }
+        .stat-card.stat-dayoff { border-left-color: #9e9e9e; }
+        .stat-card.stat-leave { border-left-color: #7c4dff; }
+        .stat-card.stat-overtime { border-left-color: #ff9800; }
+
+        .stat-label { font-size: 13px; color: #666; font-weight: 500; }
+        .stat-value { font-size: 28px; font-weight: 700; color: #222; margin-top: 4px; }
+        .stat-sub { font-size: 12px; color: #999; margin-top: 2px; }
+
+        /* ===== 篩選列 ===== */
+        .filter-bar {
+            background: white;
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .filter-bar input[type="text"],
+        .filter-bar select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .filter-bar input[type="text"] { min-width: 180px; }
+
+        /* ===== 圖例 ===== */
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-left: auto;
+            font-size: 12px;
+        }
+        .legend-item { display: flex; align-items: center; gap: 4px; color: #555; }
+        .legend-swatch {
+            width: 14px; height: 14px; border-radius: 4px; display: inline-block;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+        .legend-swatch.sw-shift { background: #e3f2fd; }
+        .legend-swatch.sw-dayoff { background: #f5f5f5; }
+        .legend-swatch.sw-leave { background: #ede7f6; }
+        .legend-swatch.sw-overtime { background: #fff3e0; }
+        .legend-swatch.sw-weekend { background: #fafafa; border: 1px dashed #ccc; }
+
+        /* ===== 矩陣表 ===== */
+        .matrix-wrapper {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            overflow: auto;
+            max-height: 75vh;
+            position: relative;
+        }
+
+        table.matrix {
+            border-collapse: separate;
+            border-spacing: 0;
+            width: 100%;
+            font-size: 12px;
+        }
+
+        table.matrix th, table.matrix td {
+            border-bottom: 1px solid #eee;
+            border-right: 1px solid #f0f0f0;
+            padding: 4px;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        table.matrix thead th {
+            position: sticky;
+            top: 0;
+            background: #fafafa;
+            z-index: 2;
+            padding: 8px 4px;
+            color: #555;
+        }
+
+        table.matrix thead tr.weekday-row th {
+            top: 34px;
+            font-weight: 400;
+            font-size: 11px;
+            color: #999;
+        }
+
+        table.matrix th.col-name, table.matrix td.col-name {
+            position: sticky;
+            left: 0;
+            background: white;
+            z-index: 3;
+            text-align: left;
+            padding: 8px 12px;
+            min-width: 140px;
+            max-width: 160px;
+            box-shadow: 2px 0 4px rgba(0,0,0,0.04);
+            white-space: normal;
+        }
+        table.matrix thead th.col-name { z-index: 4; background: #fafafa; }
+
+        table.matrix td.day-col { min-width: 56px; width: 56px; vertical-align: top; cursor: pointer; }
+        table.matrix td.day-col:hover { background: #f5f8ff; }
+
+        th.weekend, td.day-col.weekend { background: #fbfbfb; }
+        th.today-col, td.day-col.today-col { background: #eef6ff; }
+
+        .emp-name { font-weight: 600; color: #222; font-size: 13px; }
+        .emp-dept { font-size: 11px; color: #999; margin-top: 2px; }
+
+        .day-cell-inner {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            align-items: center;
+            min-height: 34px;
+            justify-content: center;
+        }
+
+        .shift-pill {
+            border-radius: 5px;
+            padding: 2px 5px;
+            font-size: 10px;
+            font-weight: 600;
+            line-height: 1.3;
+            max-width: 52px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .dayoff-pill { background: #eeeeee; color: #757575; }
+        .leave-pill { background: #ede7f6; color: #5e35b1; font-size: 10px; border-radius: 5px; padding: 1px 5px; font-weight: 600; }
+        .overtime-pill { background: #fff3e0; color: #e65100; font-size: 10px; border-radius: 5px; padding: 1px 5px; font-weight: 700; }
+
+        .badge-kitchen { background: #fff3e0; color: #e65100; }
+        .badge-floor { background: #e3f2fd; color: #0d47a1; }
+        .badge-custom { background: #fff9c4; color: #f57f17; }
+
+        .empty-day { color: #ccc; font-size: 11px; }
+
+        /* ===== 明細彈窗 ===== */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 50;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .modal-overlay.show { display: flex; }
+
+        .modal-box {
+            background: white;
+            border-radius: 12px;
+            max-width: 420px;
+            width: 100%;
+            padding: 24px;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.2);
+        }
+
+        .modal-box h3 { margin: 0 0 4px 0; font-size: 18px; color: #222; }
+        .modal-box .modal-sub { color: #888; font-size: 13px; margin-bottom: 16px; }
+
+        .modal-section {
+            border-top: 1px solid #f0f0f0;
+            padding-top: 12px;
+            margin-top: 12px;
+        }
+        .modal-section h4 { margin: 0 0 8px 0; font-size: 13px; color: #4285f4; }
+        .modal-row { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; color: #444; }
+        .modal-row span:first-child { color: #888; }
+        .modal-empty { text-align: center; color: #aaa; padding: 30px 0; font-size: 14px; }
+
+        .modal-close-btn {
+            margin-top: 18px;
+            width: 100%;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #888;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+        .empty-state-icon { font-size: 16px; font-weight: 700; color: #bbb; margin-bottom: 12px; }
+
+        @media (max-width: 768px) {
+            .report-container { padding: 12px; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .legend { margin-left: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="report-container">
+        <div class="page-header">
+            <h1>整合報表：排班／請假／加班總覽</h1>
+            <button class="btn btn-secondary" onclick="window.location.href='index.html'">返回</button>
+        </div>
+
+        <div id="permission-denied">
+            <div class="icon">權限不足</div>
+            <p>此頁面僅限管理員使用，請確認您已使用管理員帳號登入。</p>
+            <button class="btn btn-primary" onclick="window.location.href='index.html'">回到首頁</button>
+        </div>
+
+        <div id="report-body">
+            <div class="month-bar">
+                <div class="month-selector">
+                    <button class="month-btn" onclick="changeMonth(-1)">◀ 上個月</button>
+                    <div class="current-month" id="current-month-label">2026年07月</div>
+                    <button class="month-btn" onclick="changeMonth(1)">下個月 ▶</button>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button class="today-btn" onclick="goToCurrentMonth()">回到本月</button>
+                    <button class="btn btn-primary" onclick="exportMatrixCSV()">匯出本月報表 (CSV)</button>
+                </div>
+            </div>
+
+            <div class="stats-grid" id="stats-grid">
+                <div class="stat-card stat-shift">
+                    <div class="stat-label">在職員工人數</div>
+                    <div class="stat-value" id="stat-employee-count">0</div>
+                </div>
+                <div class="stat-card stat-dayoff">
+                    <div class="stat-label">本月排休天數（合計）</div>
+                    <div class="stat-value" id="stat-dayoff-count">0</div>
+                </div>
+                <div class="stat-card stat-leave">
+                    <div class="stat-label">本月請假人次／天數</div>
+                    <div class="stat-value" id="stat-leave-count">0</div>
+                    <div class="stat-sub" id="stat-leave-hours-sub">0 小時</div>
+                </div>
+                <div class="stat-card stat-overtime">
+                    <div class="stat-label">本月加班總時數</div>
+                    <div class="stat-value" id="stat-overtime-hours">0</div>
+                    <div class="stat-sub">小時</div>
+                </div>
+            </div>
+
+            <div class="filter-bar">
+                <input type="text" id="search-employee" placeholder="搜尋員工姓名..." oninput="renderMatrix()">
+                <select id="filter-dept" onchange="renderMatrix()">
+                    <option value="">全部部門</option>
+                </select>
+
+                <div class="legend">
+                    <span class="legend-item"><span class="legend-swatch sw-shift"></span>上班班別</span>
+                    <span class="legend-item"><span class="legend-swatch sw-dayoff"></span>排休／假日</span>
+                    <span class="legend-item"><span class="legend-swatch sw-leave"></span>請假（核准）</span>
+                    <span class="legend-item"><span class="legend-swatch sw-overtime"></span>加班時數</span>
+                    <span class="legend-item"><span class="legend-swatch sw-weekend"></span>週末</span>
+                </div>
+            </div>
+
+            <div class="matrix-wrapper" id="matrix-wrapper">
+                <div class="loading">載入報表資料中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 明細彈窗 -->
+    <div class="modal-overlay" id="detail-modal" onclick="if(event.target===this) closeDetailModal()">
+        <div class="modal-box" id="detail-modal-box"></div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="report.js"></script>
+</body>
+</html>

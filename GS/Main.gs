@@ -178,6 +178,10 @@ function doGet(e) {
       case "deleteShiftType":
         return respond1(handleDeleteShiftType(e.parameter));
 
+      // ==================== 整合報表系統（排班／請假／加班）====================
+      case "getMonthlyOverviewReport":
+        return respond1(handleGetMonthlyOverviewReport(e.parameter));
+
       // ==================== 薪資系統 ====================
       case "setEmployeeSalaryTW":
         return respond1(handleSetEmployeeSalaryTW(e.parameter));
