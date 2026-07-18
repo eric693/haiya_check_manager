@@ -1565,9 +1565,12 @@ function downloadTemplate() {
 
 async function loadStats() {
     try {
-        currentYear = new Date().getFullYear();
-        currentMonth = new Date().getMonth();
-        
+        // 👉 不要在這裡重設 currentYear/currentMonth：
+        // 這個函式會在每次切到「統計分析」分頁時呼叫，若重設會把使用者
+        // 用上一頁/下一頁瀏覽到的月份（例如 5 月）悄悄跳回本月，
+        // 造成「排班明明有排休/年假，統計分析月曆卻沒同步顯示」的假象。
+        // currentYear/currentMonth 只在頁面第一次載入時（全域變數宣告處）
+        // 或使用者按「回到今天」時才應該被重設。
         updateMonthDisplay();
         await loadMonthlyStats();
         await loadMonthlyShifts();
