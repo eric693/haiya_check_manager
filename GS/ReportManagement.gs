@@ -27,24 +27,30 @@ function getMonthlyOverviewReport(sessionToken, yearMonth) {
     const startDate = `${yearMonth}-01`;
     const endDate = `${yearMonth}-${String(daysInMonth).padStart(2, '0')}`;
 
-    // 1) 在職員工清單
+    // 1) 在職員工清單（getAllUsers 失敗時要讓錯誤往上傳，不能悄悄變成「0 位員工」）
     const usersResult = getAllUsers();
-    const employees = (usersResult.users || []).filter(u => u.status === '啟用' || !u.status);
+    if (!usersResult.ok) {
+      return { ok: false, msg: '無法取得員工清單: ' + (usersResult.msg || '未知錯誤') };
+    }
+    const employees = usersResult.users || [];
 
     // 2) 班別中繼資料（判斷哪些班別屬於「假別／排休」，以及所屬分類供上色）
+    //    這個對照表直接影響「排休 vs 上班」的分類是否正確，載入失敗就不產生報表，
+    //    避免所有假別班別被悄悄誤判為上班。
     const shiftTypesResult = getShiftTypes();
+    if (!shiftTypesResult.ok) {
+      return { ok: false, msg: '無法取得班別設定: ' + (shiftTypesResult.msg || '未知錯誤') };
+    }
     const shiftTypeGroup = {};
     const shiftTypeIsLeave = {};
     const shiftTypeMeta = [];
-    if (shiftTypesResult.ok && shiftTypesResult.groups) {
-      shiftTypesResult.groups.forEach(g => {
-        g.items.forEach(item => {
-          shiftTypeGroup[item.name] = g.group;
-          shiftTypeIsLeave[item.name] = !!item.isLeave;
-          shiftTypeMeta.push({ name: item.name, group: g.group, isLeave: !!item.isLeave });
-        });
+    (shiftTypesResult.groups || []).forEach(g => {
+      g.items.forEach(item => {
+        shiftTypeGroup[item.name] = g.group;
+        shiftTypeIsLeave[item.name] = !!item.isLeave;
+        shiftTypeMeta.push({ name: item.name, group: g.group, isLeave: !!item.isLeave });
       });
-    }
+    });
 
     // 3) 當月排班資料（所有員工）
     const shiftsResult = getShifts({ startDate: startDate, endDate: endDate });
@@ -57,20 +63,16 @@ function getMonthlyOverviewReport(sessionToken, yearMonth) {
     const overtimeRecords = getApprovedOvertimeRecordsForMonth_(yearMonth);
 
     // 6) 建立「員工 x 日」矩陣
+    //    每一天用陣列存放「所有」排班/請假/加班紀錄，而不是只保留最後一筆，
+    //    避免同一天有多筆紀錄時（例如當天分別請了 4 小時特休 + 4 小時事假、
+    //    或排班誤植了兩筆不同班別）互相覆蓋、統計數字對不上畫面。
     const employeeMap = {};
     employees.forEach(emp => {
       employeeMap[emp.userId] = {
         employeeId: emp.userId,
         employeeName: emp.name,
         dept: emp.dept || '',
-        days: {},
-        summary: {
-          shiftDays: 0,
-          dayOffDays: 0,
-          leaveDays: 0,
-          leaveHours: 0,
-          overtimeHours: 0
-        }
+        days: {}
       };
     });
 
@@ -78,12 +80,7 @@ function getMonthlyOverviewReport(sessionToken, yearMonth) {
       const emp = employeeMap[empId];
       if (!emp) return null;
       if (!emp.days[dayNum]) {
-        emp.days[dayNum] = {
-          shiftType: null, shiftGroup: null, isDayOff: false,
-          startTime: null, endTime: null, location: null, shiftNote: null,
-          leaveType: null, leaveHours: 0, leaveStatus: null, leaveReason: null,
-          overtimeHours: 0, overtimeReason: null, overtimeCompType: null
-        };
+        emp.days[dayNum] = { shifts: [], leaves: [], overtimes: [] };
       }
       return emp.days[dayNum];
     }
@@ -91,54 +88,69 @@ function getMonthlyOverviewReport(sessionToken, yearMonth) {
     shifts.forEach(s => {
       if (!employeeMap[s.employeeId] || !s.date) return;
       const dayNum = parseInt(s.date.split('-')[2], 10);
-      const cell = ensureDay(s.employeeId, dayNum);
-      if (!cell) return;
+      const day = ensureDay(s.employeeId, dayNum);
+      if (!day) return;
 
-      cell.shiftType = s.shiftType;
-      cell.shiftGroup = shiftTypeGroup[s.shiftType] || null;
-      cell.isDayOff = !!shiftTypeIsLeave[s.shiftType];
-      cell.startTime = s.startTime;
-      cell.endTime = s.endTime;
-      cell.location = s.location;
-      cell.shiftNote = s.note || '';
-
-      const summary = employeeMap[s.employeeId].summary;
-      if (cell.isDayOff) summary.dayOffDays++;
-      else summary.shiftDays++;
+      day.shifts.push({
+        shiftType: s.shiftType,
+        shiftGroup: shiftTypeGroup[s.shiftType] || null,
+        isDayOff: !!shiftTypeIsLeave[s.shiftType],
+        startTime: s.startTime,
+        endTime: s.endTime,
+        location: s.location,
+        note: s.note || ''
+      });
     });
 
     leaveRecords.forEach(rec => {
       if (!employeeMap[rec.employeeId] || !rec.date) return;
       const dayNum = parseInt(rec.date.split('-')[2], 10);
-      const cell = ensureDay(rec.employeeId, dayNum);
-      if (!cell) return;
+      const day = ensureDay(rec.employeeId, dayNum);
+      if (!day) return;
 
-      cell.leaveType = rec.leaveType;
-      cell.leaveHours = (cell.leaveHours || 0) + (parseFloat(rec.workHours) || 0);
-      cell.leaveStatus = rec.status;
-      cell.leaveReason = rec.reason || '';
-
-      const summary = employeeMap[rec.employeeId].summary;
-      summary.leaveDays += 1;
-      summary.leaveHours += (parseFloat(rec.workHours) || 0);
+      day.leaves.push({
+        leaveType: rec.leaveType,
+        hours: parseFloat(rec.workHours) || 0,
+        status: rec.status,
+        reason: rec.reason || ''
+      });
     });
 
     overtimeRecords.forEach(rec => {
       if (!employeeMap[rec.employeeId] || !rec.date) return;
       const dayNum = parseInt(rec.date.split('-')[2], 10);
-      const cell = ensureDay(rec.employeeId, dayNum);
-      if (!cell) return;
+      const day = ensureDay(rec.employeeId, dayNum);
+      if (!day) return;
 
-      cell.overtimeHours = (cell.overtimeHours || 0) + rec.hours;
-      cell.overtimeReason = rec.reason;
-      cell.overtimeCompType = rec.compensationType;
-
-      employeeMap[rec.employeeId].summary.overtimeHours += rec.hours;
+      day.overtimes.push({
+        hours: rec.hours,
+        reason: rec.reason,
+        compensationType: rec.compensationType
+      });
     });
 
-    const employeesArr = Object.values(employeeMap).sort((a, b) =>
-      String(a.employeeName).localeCompare(String(b.employeeName), 'zh-TW')
-    );
+    // 7) 統計數字一律從最終的 days 內容重新彙總（單一計算來源），
+    //    確保畫面上看到的每一格內容跟月統計數字永遠一致。
+    const employeesArr = Object.values(employeeMap).map(emp => {
+      const summary = { shiftDays: 0, dayOffDays: 0, leaveDays: 0, leaveHours: 0, overtimeHours: 0 };
+
+      Object.values(emp.days).forEach(day => {
+        const hasWorkShift = day.shifts.some(sh => !sh.isDayOff);
+        const hasDayOffShift = day.shifts.some(sh => sh.isDayOff);
+        if (hasWorkShift) summary.shiftDays++;
+        if (hasDayOffShift) summary.dayOffDays++;
+
+        if (day.leaves.length > 0) {
+          summary.leaveDays++;
+          day.leaves.forEach(lv => { summary.leaveHours += lv.hours; });
+        }
+
+        day.overtimes.forEach(ot => { summary.overtimeHours += ot.hours; });
+      });
+
+      emp.summary = summary;
+      return emp;
+    }).sort((a, b) => String(a.employeeName).localeCompare(String(b.employeeName), 'zh-TW'));
 
     return {
       ok: true,
@@ -170,7 +182,7 @@ function getApprovedOvertimeRecordsForMonth_(yearMonth) {
     const status = String(row[9] || '').trim().toLowerCase();
     if (status !== 'approved') continue;
 
-    const dateStr = formatDate(row[3]);
+    const dateStr = formatDateForReport_(row[3]);
     if (!dateStr || !dateStr.startsWith(yearMonth)) continue;
 
     records.push({
@@ -184,6 +196,19 @@ function getApprovedOvertimeRecordsForMonth_(yearMonth) {
   }
 
   return records;
+}
+
+/**
+ * 專用日期格式化（yyyy-MM-dd, Asia/Taipei）。
+ * 刻意不叫 formatDate：這個專案裡 Constants.gs / OvertimeOperations.gs /
+ * LeaveManagement.gs / DbOperations.gs 各自宣告了一份同名的全域 formatDate，
+ * Apps Script 會用「最後載入的那份」覆蓋其他定義，行為不可預期。
+ * 這裡用獨立名稱，確保這個檔案的日期判斷不受檔案載入順序影響。
+ */
+function formatDateForReport_(date) {
+  if (!date) return '';
+  if (typeof date === 'string') return date;
+  return Utilities.formatDate(date, 'Asia/Taipei', 'yyyy-MM-dd');
 }
 
 /**
