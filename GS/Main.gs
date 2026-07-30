@@ -538,20 +538,10 @@ function doPost(e) {
   }
 }
 
-function isEventProcessed_(eventId) {
-  const cache = CacheService.getScriptCache();
-  const key = 'event_' + eventId;
-  
-  const cached = cache.get(key);
-  if (cached) {
-    return true;
-  }
-  
-  cache.put(key, 'processed', 3600);
-  return false;
-}
 /**
  * ✅ 檢查事件是否已處理（去重機制）
+ * 唯一定義：請勿在其他檔案重複宣告，GAS 全域作用域下後定義者會覆蓋前者，
+ * 曾因 LineBotPunch.gs 內有另一份 key/TTL 不同的版本造成行為不一致。
  */
 function isEventProcessed_(eventId) {
   const cache = CacheService.getScriptCache();

@@ -20,13 +20,16 @@ function handleLineMessage(event) {
     
     Logger.log('✅ 員工已註冊: ' + employee.name);
     
-    if (text === '上班打卡') {
-      savePunchIntent_(userId, '上班');
-      sendPunchModeSelection(replyToken, employee.name, '上班');
-    }
-    else if (text === '下班打卡') {
-      savePunchIntent_(userId, '下班');
-      sendPunchModeSelection(replyToken, employee.name, '下班');
+    if (text === '上班打卡' || text === '下班打卡') {
+      const punchType = text === '上班打卡' ? '上班' : '下班';
+      // 防止使用者在按鈕還沒跳出來前連續多次點擊，短時間內重複觸發
+      // 會讓多個 doPost 執行序同時搶讀寫試算表，造成延遲堆積、按鈕一次爆量跳出
+      if (isRecentDuplicateAction_(userId, text)) {
+        Logger.log('⏭️ 忽略短時間內重複的「' + text + '」訊息');
+        return;
+      }
+      savePunchIntent_(userId, punchType);
+      sendPunchModeSelection(replyToken, employee.name, punchType);
     }
     // ========== WiFi 選擇（both 模式：使用者選了 WiFi 後顯示 SSID 清單）==========
     else if (text.startsWith('WIFI選擇:')) {
@@ -1077,6 +1080,34 @@ function getPunchIntent_(userId) {
 }
 
 /**
+ * 短時間內（預設 8 秒）同一使用者對同一文字的重複請求視為誤觸/連點，直接忽略。
+ * 用來避免使用者連續狂點「上班打卡／下班打卡」時，
+ * 每次點擊都各自觸發一次完整的 doPost 執行（讀員工表、讀 WiFi 設定、呼叫 LINE API），
+ * 造成執行序堆積、延遲許久後才一次性把按鈕全部回覆出來。
+ * @param {string} userId - LINE userId
+ * @param {string} actionKey - 用來識別動作的字串（例如訊息文字本身）
+ * @param {number} [windowMs=8000] - 去重時間窗（毫秒）
+ */
+function isRecentDuplicateAction_(userId, actionKey, windowMs) {
+  try {
+    windowMs = windowMs || 8000;
+    const cache = CacheService.getScriptCache();
+    const key = 'DEDUP_' + userId + '_' + actionKey;
+
+    if (cache.get(key)) {
+      return true;
+    }
+
+    cache.put(key, '1', Math.ceil(windowMs / 1000));
+    return false;
+
+  } catch (error) {
+    Logger.log('❌ isRecentDuplicateAction_ 錯誤: ' + error);
+    return false; // 發生錯誤時放行，避免卡住正常打卡
+  }
+}
+
+/**
  * 清除打卡意圖
  * @param {string} userId - LINE userId
  */
@@ -1126,30 +1157,8 @@ function isDuplicatePunch_(userId, punchType) {
   }
 }
 
-/**
- * 檢查事件是否已處理過（防止 LINE Webhook 重複觸發）
- */
-function isEventProcessed_(eventId) {
-  try {
-    const cache = CacheService.getScriptCache();
-    const key = 'EVENT_' + eventId;
-    
-    // 檢查快取中是否存在
-    if (cache.get(key)) {
-      Logger.log('⚠️ 事件已處理過: ' + eventId);
-      return true;
-    }
-    
-    // 標記為已處理（快取 10 分鐘）
-    cache.put(key, 'processed', 600);
-    Logger.log('✅ 標記事件為已處理: ' + eventId);
-    return false;
-    
-  } catch (error) {
-    Logger.log('❌ isEventProcessed_ 錯誤: ' + error);
-    return false;  // 發生錯誤時允許處理，避免卡住
-  }
-}
+// isEventProcessed_ 唯一定義位於 Main.gs（此處原有一份 key/TTL 不同的重複版本已移除）
+
 /**
  * 處理 LINE 位置訊息（執行打卡）
  */
@@ -2437,14 +2446,19 @@ function sendLineReply_(replyToken, messages) {
     };
     
     const response = UrlFetchApp.fetch(url, options);
+    const code = response.getResponseCode();
     const result = JSON.parse(response.getContentText());
-    
-    if (response.getResponseCode() === 200) {
+
+    if (code === 200) {
       Logger.log('✅ LINE 回覆已發送');
+    } else if (code === 400 && result.message === 'Invalid reply token') {
+      // replyToken 已過期或被用過（常發生在使用者短時間內連續點擊、
+      // 或後端因執行序堆積而延遲處理，導致回覆時 token 已失效）
+      Logger.log('❌ LINE 回覆失敗：replyToken 已過期/失效，訊息未送達使用者');
     } else {
-      Logger.log('❌ LINE 回覆失敗: ' + result.message);
+      Logger.log('❌ LINE 回覆失敗 (HTTP ' + code + '): ' + result.message);
     }
-    
+
   } catch (error) {
     Logger.log('❌ sendLineReply_ 錯誤: ' + error);
   }
