@@ -78,7 +78,41 @@ function checkAttendanceAbnormal(attendanceRows) {
     }
     Logger.log(`📅 本月應檢查的日期數: ${allDatesInMonth.length}`);
   }
-  
+
+  // ===== 步驟 2.5：取得本月已排定的假別（排休/年假/過年假/國定假日等）=====
+  // 這些日期當天即使沒打卡，也不需要顯示補打卡提醒
+  const leaveDatesSet = {};
+  if (targetUserId && targetMonth) {
+    try {
+      const shiftTypesResult = getShiftTypes();
+      const leaveShiftTypeNames = {};
+      if (shiftTypesResult.ok) {
+        (shiftTypesResult.groups || []).forEach(g => {
+          g.items.forEach(item => {
+            if (item.isLeave) leaveShiftTypeNames[item.name] = true;
+          });
+        });
+      }
+
+      const [leaveYear, leaveMonth] = targetMonth.split('-').map(Number);
+      const daysInLeaveMonth = new Date(leaveYear, leaveMonth, 0).getDate();
+      const monthStart = `${targetMonth}-01`;
+      const monthEnd = `${targetMonth}-${String(daysInLeaveMonth).padStart(2, '0')}`;
+
+      const shiftsResult = getShifts({ employeeId: targetUserId, startDate: monthStart, endDate: monthEnd });
+      if (shiftsResult.success) {
+        (shiftsResult.data || []).forEach(shift => {
+          if (leaveShiftTypeNames[shift.shiftType]) {
+            leaveDatesSet[shift.date] = true;
+          }
+        });
+      }
+      Logger.log(`📅 本月已排定假別日期: ${Object.keys(leaveDatesSet).join(', ') || '無'}`);
+    } catch (err) {
+      Logger.log('⚠️ 取得排班假別資料失敗，略過排休排除邏輯: ' + err.message);
+    }
+  }
+
   // ===== 步驟 3：檢查每一天的打卡狀態 =====
   if (targetUserId && targetMonth) {
     for (const date of allDatesInMonth) {
@@ -131,14 +165,18 @@ function checkAttendanceAbnormal(attendanceRows) {
         });
         Logger.log(`❌ ${date}: 補上班被拒絕`);
       } else if (!hasPunchIn) {
-        abnormalIdCounter++;
-        abnormalRecords.push({
-          date: date,
-          reason: "STATUS_PUNCH_IN_MISSING",
-          userId: targetUserId,
-          id: `abnormal-${abnormalIdCounter}`
-        });
-        Logger.log(`📋 ${date}: 缺少上班卡`);
+        if (leaveDatesSet[date]) {
+          Logger.log(`🏖️ ${date}: 當天已排休/排定假別，略過缺上班卡提醒`);
+        } else {
+          abnormalIdCounter++;
+          abnormalRecords.push({
+            date: date,
+            reason: "STATUS_PUNCH_IN_MISSING",
+            userId: targetUserId,
+            id: `abnormal-${abnormalIdCounter}`
+          });
+          Logger.log(`📋 ${date}: 缺少上班卡`);
+        }
       }
       
       // ⭐⭐⭐ 處理下班卡狀態
@@ -173,14 +211,18 @@ function checkAttendanceAbnormal(attendanceRows) {
         });
         Logger.log(`❌ ${date}: 補下班被拒絕`);
       } else if (!hasPunchOut) {
-        abnormalIdCounter++;
-        abnormalRecords.push({
-          date: date,
-          reason: "STATUS_PUNCH_OUT_MISSING",
-          userId: targetUserId,
-          id: `abnormal-${abnormalIdCounter}`
-        });
-        Logger.log(`📋 ${date}: 缺少下班卡`);
+        if (leaveDatesSet[date]) {
+          Logger.log(`🏖️ ${date}: 當天已排休/排定假別，略過缺下班卡提醒`);
+        } else {
+          abnormalIdCounter++;
+          abnormalRecords.push({
+            date: date,
+            reason: "STATUS_PUNCH_OUT_MISSING",
+            userId: targetUserId,
+            id: `abnormal-${abnormalIdCounter}`
+          });
+          Logger.log(`📋 ${date}: 缺少下班卡`);
+        }
       }
     }
   }
