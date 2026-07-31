@@ -359,20 +359,13 @@ function autoFillShiftTime(shiftType) {
         return;
     }
 
-    // 從快取找時間
+    // 從快取找時間（含假別班別，皆可手動編輯覆蓋預設值）
     const found = shiftTypesCache.find(s => s.name === shiftType);
     if (found) {
-        if (found.isLeave) {
-            startTimeInput.value = '00:00';
-            endTimeInput.value = '00:00';
-            startTimeInput.disabled = true;
-            endTimeInput.disabled = true;
-        } else {
-            startTimeInput.value = found.startTime;
-            endTimeInput.value = found.endTime;
-            startTimeInput.disabled = false;
-            endTimeInput.disabled = false;
-        }
+        startTimeInput.value = found.startTime;
+        endTimeInput.value = found.endTime;
+        startTimeInput.disabled = false;
+        endTimeInput.disabled = false;
     }
 }
 // ==================== 員工載入函式（完整除錯版） ====================
