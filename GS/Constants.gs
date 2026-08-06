@@ -9,6 +9,12 @@ const LINE_REDIRECT_URL   = "https://eric693.github.io/haiya_check_manager/";
 const SESSION_TTL_MS = 7000 * 60 * 60 * 24; // 1 天
 const TOKEN_LENGTH   = 36;
 
+// ==================== 效能設定 ====================
+// 打卡防重複檢查時，只掃描打卡紀錄表最後這幾列（資料是依時間往下追加的）
+const ATTENDANCE_SCAN_TAIL_ROWS = 1000;
+// 出勤查詢結果的快取秒數（同一個月的資料短時間內會被重複查詢）
+const ATTENDANCE_CACHE_TTL_SEC = 45;
+
 // ==================== 工作表名稱 ====================
 // 基礎系統
 const SHEET_EMPLOYEES  = '員工名單';

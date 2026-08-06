@@ -109,22 +109,66 @@ function renderTranslations(container = document) {
  * @param {string} [loadingId="loading"] - 顯示 loading 狀態的 DOM 元素 ID。
  * @returns {Promise<object>} - 回傳一個包含 API 回應資料的 Promise。
  */
+// ⏱️ API 逾時設定（Apps Script 慢或斷線時，避免畫面永遠卡在 loading）
+const API_TIMEOUT_MS = 20000;
+
+// 🔢 loading 遮罩計數器：多支 API 併發時，最快回來的那支不會提前把遮罩關掉
+const _loadingCounters = {};
+
+function pushLoading(loadingId) {
+    const el = document.getElementById(loadingId);
+    if (!el) return;
+    _loadingCounters[loadingId] = (_loadingCounters[loadingId] || 0) + 1;
+    el.style.display = "block";
+}
+
+function popLoading(loadingId) {
+    const el = document.getElementById(loadingId);
+    if (!el) return;
+    _loadingCounters[loadingId] = Math.max(0, (_loadingCounters[loadingId] || 1) - 1);
+    if (_loadingCounters[loadingId] === 0) {
+        el.style.display = "none";
+    }
+}
+
+// 🔁 同一個 action 併發去重：重複點擊分頁／按鈕時共用同一個請求
+const _inflightRequests = new Map();
+
 async function callApifetch(action, loadingId = "loading") {
+    const existing = _inflightRequests.get(action);
+    if (existing) {
+        console.log('♻️ 沿用進行中的相同請求:', action);
+        return existing;
+    }
+
+    const promise = _callApifetchInner(action, loadingId);
+    _inflightRequests.set(action, promise);
+    try {
+        return await promise;
+    } finally {
+        _inflightRequests.delete(action);
+    }
+}
+
+async function _callApifetchInner(action, loadingId = "loading") {
     const token = localStorage.getItem("sessionToken");
     const url = `${API_CONFIG.apiUrl}?action=${action}&token=${token}`;
-    
-    const loadingEl = document.getElementById(loadingId);
-    if (loadingEl) loadingEl.style.display = "block";
-    
+
+    pushLoading(loadingId);
+
+    // ⏱️ 逾時中斷，避免無限等待
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
     try {
-        const response = await fetch(url);
-        
+        const response = await fetch(url, { signal: controller.signal });
+
         if (!response.ok) {
             throw new Error(`HTTP 錯誤: ${response.status}`);
         }
-        
+
         const data = await response.json();
-        
+
         // ✅✅✅ 雙向格式統一（關鍵修正）
         // 1. 如果後端回傳 success，轉換為 ok
         if (data.success !== undefined && data.ok === undefined) {
@@ -148,11 +192,17 @@ async function callApifetch(action, loadingId = "loading") {
         
         return data;
     } catch (error) {
-        showNotification(t("CONNECTION_FAILED"), "error");
-        console.error("API 呼叫失敗:", error);
+        if (error.name === 'AbortError') {
+            showNotification('伺服器回應逾時，請稍後再試一次', 'error');
+            console.error('API 逾時:', action);
+        } else {
+            showNotification(t("CONNECTION_FAILED"), "error");
+            console.error("API 呼叫失敗:", error);
+        }
         throw error;
     } finally {
-        if (loadingEl) loadingEl.style.display = "none";
+        clearTimeout(timeoutId);
+        popLoading(loadingId);
     }
 }
 
@@ -2232,6 +2282,46 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
     // UI切換邏輯
+    // ⚡ 管理員分頁：原本一次併發 9 支 API，每支都要搶同一份試算表的鎖，
+    //    很容易整個卡住甚至撞到 Apps Script 同時執行上限。
+    //    改為「分批依序載入」＋「載入中不重複觸發」。
+    let _isLoadingAdminView = false;
+
+    async function loadAdminViewData() {
+        if (_isLoadingAdminView) {
+            console.log('⏳ 管理員資料載入中，略過重複觸發');
+            return;
+        }
+        _isLoadingAdminView = true;
+
+        // 依序執行，每一批之間讓出主執行緒，避免同時打爆後端
+        const steps = [
+            ['待審核補打卡', fetchAndRenderReviewRequests],
+            ['待審核加班', loadPendingOvertimeRequests],
+            ['待審核請假', loadPendingLeaveRequests],
+            ['待審核工作日誌', loadPendingWorklogs],
+            ['公告', displayAdminAnnouncements],
+            ['員工清單', loadAllUsers],
+            ['統計分析', initAdminAnalysis],
+            ['打卡模式設定', initPunchModeSettings],
+            ['觸發器狀態', checkTriggerStatus]
+        ];
+
+        try {
+            for (const [label, fn] of steps) {
+                if (typeof fn !== 'function') continue;
+                try {
+                    await fn();
+                } catch (err) {
+                    // 單一區塊失敗不要拖垮整個管理頁
+                    console.error(`管理員資料載入失敗（${label}）:`, err);
+                }
+            }
+        } finally {
+            _isLoadingAdminView = false;
+        }
+    }
+
     const switchTab = (tabId) => {
         // 修改這一行，加入 'shift-view'
         const tabs = ['dashboard-view', 'monthly-view', 'location-view', 'shift-view', 'admin-view', 'overtime-view', 'leave-view', 'salary-view', 'worklog-view'];
@@ -2278,15 +2368,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else if (tabId === 'shift-view') { // 新增：排班分頁初始化
             initShiftTab();
         } else if (tabId === 'admin-view') {
-            fetchAndRenderReviewRequests();
-            loadPendingOvertimeRequests();
-            loadPendingWorklogs();
-            loadPendingLeaveRequests();
-            displayAdminAnnouncements();
-            initAdminAnalysis();
-            loadAllUsers();
-            checkTriggerStatus();
-            initPunchModeSettings();
+            loadAdminViewData();
         } else if (tabId === 'overtime-view') {
             initOvertimeTab();
         } else if (tabId === 'leave-view') {
@@ -5644,6 +5726,40 @@ function closeHistoryAdjustDialog() {
         dialog.remove();
     }
 }
+/**
+ * 🆕 提交成功後，把對話框換成「已送出」確認畫面
+ * （避免員工看不到提示訊息而重複申請）
+ */
+function showHistoryAdjustSuccess({ date, type, time, reason }) {
+    const dialog = document.getElementById('history-adjust-dialog');
+    if (!dialog) return;
+
+    const typeLabel = type === 'in' ? '上班' : (type === 'out' ? '下班' : type);
+
+    dialog.innerHTML = `
+        <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 text-center">
+            <div class="text-5xl mb-3">✅</div>
+            <h3 class="text-xl font-bold text-gray-800 dark:text-white mb-2">申請已送出</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                已成功提交，狀態為「待主管審核」，請勿重複申請。
+            </p>
+            <div class="text-left text-sm bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-5 space-y-1">
+                <div><span class="text-gray-500 dark:text-gray-400">日期：</span>${date}</div>
+                <div><span class="text-gray-500 dark:text-gray-400">類型：</span>${typeLabel}</div>
+                <div><span class="text-gray-500 dark:text-gray-400">時間：</span>${time}</div>
+                <div><span class="text-gray-500 dark:text-gray-400">原因：</span>${(reason || '').replace(/</g, '&lt;')}</div>
+                <div><span class="text-gray-500 dark:text-gray-400">狀態：</span>
+                    <span class="text-yellow-600 dark:text-yellow-400 font-semibold">待審核</span>
+                </div>
+            </div>
+            <button onclick="closeHistoryAdjustDialog()"
+                    class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors">
+                我知道了
+            </button>
+        </div>
+    `;
+}
+
 let _isSubmittingHistory = false;
 /**
  * 🆕 提交歷史補打卡申請
@@ -5746,10 +5862,13 @@ async function submitHistoryAdjust() {
         
         if (res.ok) {
             showNotification('✅ 歷史補打卡申請已提交！等待主管審核', 'success');
-            closeHistoryAdjustDialog();
-            
+
+            // 直接在對話框內顯示送出結果，避免看不到提示而重複送出
+            showHistoryAdjustSuccess({ date, type, time, reason });
+
             // 重新載入異常記錄
             await checkAbnormal();
+            return;
         } else {
             showNotification(tOrMsg(res, '提交失敗'), 'error');
         }

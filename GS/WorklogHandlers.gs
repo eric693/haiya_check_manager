@@ -229,18 +229,23 @@ function handleReviewWorklog(params) {
       return { ok: false, msg: "無效的審核動作: " + action };
     }
     
-    // 呼叫核心函數
-    const result = reviewWorklog(
+    // 呼叫核心函數（🔒 序列化，避免同一筆被同時審核）
+    const result = withScriptLock_(() => reviewWorklog(
       worklogId,
       action,
       session.user.userId,
       session.user.name,
       comment
-    );
+    ));
     
+    // 取鎖失敗時 withScriptLock_ 會回傳 { ok:false, msg }
+    if (result && result.ok === false && result.code === 'ERR_BUSY') {
+      return result;
+    }
+
     Logger.log('📤 審核結果: ' + result.success);
     Logger.log('═══════════════════════════════════════');
-    
+
     return {
       ok: result.success,
       msg: result.message

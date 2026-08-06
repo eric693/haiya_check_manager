@@ -539,7 +539,8 @@ function handleApproveReview(params) {
   if (!recordId) {
     return { ok: false, msg: "缺少審核 ID" };
   }
-  return updateReviewStatus(recordId, "v", "核准");
+  // 🔒 避免兩位主管同時審核同一筆造成重複寫入
+  return withScriptLock_(() => updateReviewStatus(recordId, "v", "核准"));
 }
 
 function handleRejectReview(params) {
@@ -547,7 +548,7 @@ function handleRejectReview(params) {
   if (!recordId) {
     return { ok: false, msg: "缺少審核 ID" };
   }
-  return updateReviewStatus(recordId, "x", "拒絕");
+  return withScriptLock_(() => updateReviewStatus(recordId, "x", "拒絕"));
 }
 
 // ==================== 加班功能相關 ====================
@@ -570,12 +571,13 @@ function handleReviewOvertime(params) {
   Logger.log(`   - reviewAction: "${reviewAction}"`);
   Logger.log(`   - comment: "${comment}"`);
   
-  return reviewOvertimeRequest(
-    token, 
-    parseInt(rowNumber), 
+  // 🔒 加班審核會改動時數，需序列化
+  return withScriptLock_(() => reviewOvertimeRequest(
+    token,
+    parseInt(rowNumber),
     reviewAction,
     comment || ""
-  );
+  ));
 }
 
 // ==================== 請假功能相關 ====================
@@ -609,7 +611,8 @@ function handleGetPendingLeaveRequests(params) {
 
 function handleReviewLeave(params) {
   const { token, rowNumber, reviewAction, comment } = params;
-  return reviewLeaveRequest(token, parseInt(rowNumber), reviewAction, comment || "");
+  // 🔒 請假審核會扣假期餘額，必須序列化，避免重複扣或漏扣
+  return withScriptLock_(() => reviewLeaveRequest(token, parseInt(rowNumber), reviewAction, comment || ""));
 }
 
 function handleInitializeEmployeeLeave(params) {

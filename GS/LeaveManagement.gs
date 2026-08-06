@@ -766,9 +766,50 @@ function reviewLeaveRequest(sessionToken, rowNumber, reviewAction, comment) {
     const employeeName = record[2];
     const leaveType = record[4];
     const leaveStartDate = record[5]; // 請假開始日期（用於確定月份）
-    const workHours = record[7];
+    const leaveEndDate = record[6];
+    let workHours = Number(record[7]);
     const days = record[8];
-    
+    const currentStatus = record[10];
+
+    // ⭐ 防止重複審核（重複核准會重複扣時數）
+    if (currentStatus !== 'PENDING') {
+      Logger.log(`⚠️ 此申請已審核過（目前狀態：${currentStatus}），不再處理`);
+      return {
+        ok: false,
+        code: "ERR_ALREADY_REVIEWED",
+        msg: `此申請已經審核過了（目前狀態：${currentStatus}）`
+      };
+    }
+
+    // ⭐ 時數以「開始/結束時間」重算為準
+    //    舊資料的 H 欄可能是空白或字串，直接拿來扣會變成扣 0（看起來像沒扣）
+    try {
+      const s = new Date(leaveStartDate);
+      const e2 = new Date(leaveEndDate);
+      if (!isNaN(s.getTime()) && !isNaN(e2.getTime())) {
+        const recalc = calculateWorkHoursAndDays_Unlimited(s, e2);
+        if (recalc && Number(recalc.workHours) > 0) {
+          if (Number(recalc.workHours) !== workHours) {
+            Logger.log(`🔄 時數修正：表單 ${record[7]} → 重算 ${recalc.workHours}`);
+            sheet.getRange(rowNumber, 8).setValue(recalc.workHours);
+            sheet.getRange(rowNumber, 9).setValue(recalc.days);
+          }
+          workHours = Number(recalc.workHours);
+        }
+      }
+    } catch (calcErr) {
+      Logger.log('⚠️ 時數重算失敗，改用表單既有時數: ' + calcErr.message);
+    }
+
+    if (!(workHours > 0)) {
+      Logger.log(`❌ 時數無效（${record[7]}），無法扣除餘額`);
+      return {
+        ok: false,
+        code: "ERR_INVALID_HOURS",
+        msg: "此筆請假的時數異常（無法計算），請確認起訖時間後再審核"
+      };
+    }
+
     Logger.log('📋 請假資料:');
     Logger.log(`   員工: ${employeeName} (${userId})`);
     Logger.log(`   假別: ${leaveType}`);
@@ -888,9 +929,18 @@ function deductLeaveBalance(userId, leaveType, hours) {
     Logger.log(`   小時數: ${hours}`);
     Logger.log('');
     
+    const deductHours = Number(hours);
+    if (!(deductHours > 0)) {
+      Logger.log('❌ 時數無效，不執行扣除: ' + hours);
+      return {
+        ok: false,
+        msg: "時數無效（" + hours + "），未扣除餘額"
+      };
+    }
+
     const sheet = getLeaveBalanceSheet();
     const values = sheet.getDataRange().getValues();
-    
+
     const leaveTypeColumnMap = {
       '特休假': 4,
       '未住院病假': 5,
@@ -936,26 +986,28 @@ function deductLeaveBalance(userId, leaveType, hours) {
     }
     
     for (let i = 1; i < values.length; i++) {
-      if (values[i][0] === userId) {
+      // ⭐ 員工ID 可能是數字或字串，用寬鬆比對避免比不到而「沒扣到」
+      if (String(values[i][0]).trim() === String(userId).trim()) {
         Logger.log(`✅ 找到員工記錄（第 ${i + 1} 行）`);
         Logger.log(`   姓名: ${values[i][1]}`);
-        
-        const currentBalance = values[i][columnIndex - 1];
-        
+
+        const rawBalance = values[i][columnIndex - 1];
+        const currentBalance = Number(rawBalance) || 0;
+
         Logger.log(`   目前餘額: ${currentBalance} 小時`);
-        
-        if (currentBalance < hours) {
-          Logger.log(`   ⚠️ 餘額不足：需要 ${hours} 小時，只剩 ${currentBalance} 小時`);
+
+        if (currentBalance < deductHours) {
+          Logger.log(`   ⚠️ 餘額不足：需要 ${deductHours} 小時，只剩 ${currentBalance} 小時`);
           return {
             ok: false,
-            msg: `${leaveType} 餘額不足（需要 ${hours} 小時，只剩 ${currentBalance} 小時）`
+            msg: `${leaveType} 餘額不足（需要 ${deductHours} 小時，只剩 ${currentBalance} 小時）`
           };
         }
-        
-        const newBalance = currentBalance - hours;
-        
-        Logger.log(`   扣除 ${hours} 小時後: ${newBalance} 小時`);
-        
+
+        const newBalance = currentBalance - deductHours;
+
+        Logger.log(`   扣除 ${deductHours} 小時後: ${newBalance} 小時`);
+
         sheet.getRange(i + 1, columnIndex).setValue(newBalance);
         sheet.getRange(i + 1, 19).setValue(new Date()); // ✅ S欄（更新時間）
         

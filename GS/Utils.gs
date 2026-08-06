@@ -1,5 +1,35 @@
 // Utils.gs
 
+/**
+ * 🔒 以指令碼鎖包住一段「先讀後寫」的邏輯
+ *
+ * 主管同時審核、員工連點送出時，若沒有鎖，兩支執行緒會讀到同一份舊資料
+ * 再各自寫回，造成重複扣時數／重複寫入。
+ *
+ * @param {Function} fn 要保護的函式
+ * @param {number} [timeoutMs=20000] 等待鎖的毫秒數
+ */
+function withScriptLock_(fn, timeoutMs) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(timeoutMs || 20000);
+  } catch (e) {
+    Logger.log('⚠️ 取得指令碼鎖失敗: ' + e.message);
+    return { ok: false, code: "ERR_BUSY", msg: "系統忙碌中，請稍後再試一次" };
+  }
+
+  try {
+    return fn();
+  } finally {
+    try {
+      SpreadsheetApp.flush();
+    } catch (flushErr) {
+      Logger.log('⚠️ flush 失敗: ' + flushErr.message);
+    }
+    lock.releaseLock();
+  }
+}
+
 function jsonp(e, obj) {
   const cb = e.parameter.callback || "callback";
   return ContentService.createTextOutput(cb + "(" + JSON.stringify(obj) + ")")

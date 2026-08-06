@@ -53,6 +53,7 @@ function writeEmployee_(profile) {
       sheet.getRange(i + 1, 2).setValue(profile.email || "");
       sheet.getRange(i + 1, 4).setValue(profile.pictureUrl);
       sheet.getRange(i + 1, 8).setValue("啟用");
+      invalidateEmployeeCache_(values[i][0]);
       
       Logger.log(`✅ 更新員工資料完成（保留原有權限：${values[i][5]}）`);
       return values[i];
@@ -84,25 +85,49 @@ function writeEmployee_(profile) {
 /**
  * ✅ 修正版：優先使用手動設定的姓名
  */
+// ⚡ 員工資料快取（同一次登入期間會被大量重複查詢）
+const EMPLOYEE_CACHE_TTL_SEC = 60;
+
+function employeeCacheKey_(userId) {
+  return 'emp_v1_' + userId;
+}
+
+/**
+ * 清除員工資料快取（改名／改部門／停用後務必呼叫）
+ */
+function invalidateEmployeeCache_(userId) {
+  if (!userId) return;
+  try {
+    CacheService.getScriptCache().remove(employeeCacheKey_(String(userId).trim()));
+  } catch (e) {
+    Logger.log('⚠️ 清除員工快取失敗: ' + e.message);
+  }
+}
+
 function findEmployeeByLineUserId_(userId) {
+  const key = employeeCacheKey_(String(userId).trim());
+  let cache = null;
+  try {
+    cache = CacheService.getScriptCache();
+    const cached = cache.get(key);
+    if (cached) return JSON.parse(cached);
+  } catch (e) {
+    Logger.log('⚠️ 讀取員工快取失敗（改走試算表）: ' + e.message);
+  }
+
   const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_EMPLOYEES);
   const values = sh.getDataRange().getValues();
 
   for (let i = 1; i < values.length; i++) {
-    if (String(values[i][0]).trim() === userId) {
-      
+    if (String(values[i][0]).trim() === String(userId).trim()) {
+
       // ⭐⭐⭐ 關鍵修正：優先使用 nameOverride
       const displayName = values[i][2];        // C 欄：displayName
       const nameOverride = values[i][8] || ""; // I 欄：nameOverride
-      
+
       const finalName = nameOverride || displayName; // 優先使用手動設定的姓名
-      
-      Logger.log(`📋 查詢員工: ${userId}`);
-      Logger.log(`   displayName: ${displayName}`);
-      Logger.log(`   nameOverride: ${nameOverride}`);
-      Logger.log(`   最終姓名: ${finalName}`);
-      
-      return {
+
+      const found = {
         ok: true,
         userId: values[i][0],        // ✅ LINE userId
         employeeId: values[i][0],    // ✅ 員工ID = LINE userId
@@ -112,9 +137,17 @@ function findEmployeeByLineUserId_(userId) {
         dept: values[i][5] || "管理員",
         status: values[i][7] || "啟用"
       };
+
+      try {
+        if (cache) cache.put(key, JSON.stringify(found), EMPLOYEE_CACHE_TTL_SEC);
+      } catch (e) {
+        Logger.log('⚠️ 寫入員工快取失敗: ' + e.message);
+      }
+
+      return found;
     }
   }
-  
+
   return { ok: false, code: "ERR_NO_DATA" };
 }
 
@@ -143,6 +176,7 @@ function unlockEmployeeName(userId) {
         
         // ⭐ 清除 nameOverride，下次登入時將使用 LINE 姓名
         sheet.getRange(i + 1, 9).setValue("");  // I 欄：nameOverride
+        invalidateEmployeeCache_(userId);
         
         Logger.log('✅ 已解除姓名鎖定');
         Logger.log('   當前姓名: ' + currentName);
@@ -318,6 +352,8 @@ function writeSession_(userId) {
 
   if (range) {
     const row = range.getRow();
+    // ⚡ 舊 token 會被覆蓋，順手清掉它的快取，避免舊 token 在快取有效期內仍可用
+    invalidateSessionCache_(sheet.getRange(row, 1).getValue());
     sheet.getRange(row, 1, 1, 4).setValues([[oneTimeToken, userId, now, expiredAt]]);
   } else {
     sheet.appendRow([oneTimeToken, userId, now, expiredAt]);
@@ -339,31 +375,81 @@ function verifyOneTimeToken_(otoken) {
   const expiredAt = new Date(now.getTime() + SESSION_TTL_MS);
   const userId = sheet.getRange(row, 2).getValue();
 
+  invalidateSessionCache_(otoken);
   sheet.getRange(row, 1, 1, 4).setValues([[sessionToken, userId, now, expiredAt]]);
   return sessionToken;
 }
 
+// ==================== Session 快取設定 ====================
+// ⚡ 效能：checkSession_ 是所有 API 的必經之路，原本每次呼叫都會
+//    「全表讀 Session + 寫一次到期時間 + 全表讀員工名單」，
+//    導致每一支 API 都要排隊等試算表寫入鎖，是系統卡頓的主因。
+const SESSION_CACHE_TTL_SEC = 60;   // 驗證結果快取秒數
+const SESSION_RENEW_RATIO   = 0.5;  // 剩餘效期低於此比例才續期（避免每次都寫表）
+
+function sessionCacheKey_(sessionToken) {
+  return 'sess_v1_' + sessionToken;
+}
+
 /**
- * ✅ 檢查 Session（自動延期）- 修正版
+ * 手動清除某個 session 的快取（改名／改部門／登出後呼叫）
+ */
+function invalidateSessionCache_(sessionToken) {
+  if (!sessionToken) return;
+  try {
+    CacheService.getScriptCache().remove(sessionCacheKey_(sessionToken));
+  } catch (e) {
+    Logger.log('⚠️ 清除 session 快取失敗: ' + e.message);
+  }
+}
+
+/**
+ * ✅ 檢查 Session（自動延期）- 效能修正版
+ *
+ * 修正重點：
+ * 1. 驗證結果快取 60 秒 → 短時間內連續呼叫不再碰試算表
+ * 2. 只有在效期剩不到一半時才寫回新的到期時間 → 大幅減少寫入鎖競爭
+ * 3. 只讀 A~D 四欄、且只讀到最後一列，不再 getDataRange() 全表掃描
  */
 function checkSession_(sessionToken) {
   if (!sessionToken) return { ok: false, code: "MISSING_SESSION_TOKEN" };
 
+  // ⚡ 先查快取
+  let cache = null;
+  try {
+    cache = CacheService.getScriptCache();
+    const cached = cache.get(sessionCacheKey_(sessionToken));
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (e) {
+    Logger.log('⚠️ 讀取 session 快取失敗（改走試算表）: ' + e.message);
+  }
+
   const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_SESSION);
   if (!sh) return { ok: false, code: "SESSION_SHEET_NOT_FOUND" };
 
-  const values = sh.getDataRange().getValues();
-  for (let i = 1; i < values.length; i++) {
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return { ok: false, code: "ERR_SESSION_INVALID" };
+
+  // 只讀需要的 A~D 欄，不整張表拉下來
+  const values = sh.getRange(2, 1, lastRow - 1, 4).getValues();
+
+  for (let i = 0; i < values.length; i++) {
     const [token, userId, , expiredAt] = values[i];
     if (token === sessionToken) {
-      if (expiredAt && new Date() > new Date(expiredAt)) {
+      const now = new Date();
+      if (expiredAt && now > new Date(expiredAt)) {
         return { ok: false, code: "ERR_SESSION_EXPIRED" };
       }
-      
-      // 延長 Session
-      const newExpiredAt = new Date(new Date().getTime() + SESSION_TTL_MS);
-      sh.getRange(i + 1, 4).setValue(newExpiredAt);
-      
+
+      // ⚡ 只在快到期時才續期（原本每次呼叫都寫一次表）
+      const remainMs = expiredAt ? (new Date(expiredAt).getTime() - now.getTime()) : 0;
+      if (remainMs < SESSION_TTL_MS * SESSION_RENEW_RATIO) {
+        const newExpiredAt = new Date(now.getTime() + SESSION_TTL_MS);
+        sh.getRange(i + 2, 4).setValue(newExpiredAt);
+      }
+
       // 查詢員工資料
       const employee = findEmployeeByLineUserId_(userId);
       if (!employee.ok) {
@@ -372,8 +458,8 @@ function checkSession_(sessionToken) {
       }
       
       // ⭐⭐⭐ 關鍵修正：不要返回整個 employee 物件，而是只返回純淨的 user 資料
-      return { 
-        ok: true, 
+      const result = {
+        ok: true,
         user: {
           userId: employee.userId,
           employeeId: employee.employeeId,
@@ -386,6 +472,17 @@ function checkSession_(sessionToken) {
         code: "WELCOME_BACK",
         params: { name: employee.name }
       };
+
+      // ⚡ 只快取「成功」的結果，失敗結果不快取以免鎖住使用者
+      try {
+        if (cache) {
+          cache.put(sessionCacheKey_(sessionToken), JSON.stringify(result), SESSION_CACHE_TTL_SEC);
+        }
+      } catch (e) {
+        Logger.log('⚠️ 寫入 session 快取失敗: ' + e.message);
+      }
+
+      return result;
     }
   }
   return { ok: false, code: "ERR_SESSION_INVALID" };
@@ -461,50 +558,77 @@ function punch(sessionToken, type, lat, lng, note) {
     return { ok: false, code: "ERR_OUT_OF_RANGE" };
   }
 
-  // 防重複：同一天同類型（上班/下班）只能打一次
+  // ⚡ 防重複：同一天同類型（上班/下班）只能打一次
+  //    原本每次打卡都 getDataRange() 讀「整張」打卡紀錄（含所有歷史），
+  //    表越大越慢，是打卡卡住的主因之一。
+  //    打卡紀錄是依時間往下追加的，今天的資料一定在表尾，
+  //    因此只需要讀最後 ATTENDANCE_SCAN_TAIL_ROWS 列即可。
   const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_ATTENDANCE);
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  const attendanceValues = sh.getDataRange().getValues();
 
-  for (let i = 1; i < attendanceValues.length; i++) {
-    const row = attendanceValues[i];
-    if (!row[0]) continue;
-
-    const rowDate = Utilities.formatDate(new Date(row[0]), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-    const rowUserId = String(row[1]).trim();
-    const rowType = String(row[4]).trim();
-    const rowNote = String(row[7] || '').trim();
-
-    // 跳過補打卡記錄
-    if (rowNote === '補打卡') continue;
-
-    if (rowDate === today && rowUserId === user.userId && rowType === type) {
-      Logger.log('防重複: ' + user.name + ' 今天（' + today + '）已打 ' + type + ' 卡');
-      return {
-        ok: false,
-        code: "ERR_DUPLICATE_PUNCH",
-        msg: '今天已經打過' + type + '卡，請勿重複打卡'
-      };
-    }
+  // 🔒 同一使用者連點／多裝置同時打卡時，避免兩支執行緒都通過檢查而寫入兩筆
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (lockErr) {
+    Logger.log('⚠️ 取得鎖失敗: ' + lockErr.message);
+    return { ok: false, code: "ERR_BUSY", msg: '系統忙碌中，請稍後再試一次' };
   }
 
-  // 寫入打卡記錄
-  const row = [
-    new Date(),
-    user.userId,
-    user.dept,
-    user.name,
-    type,
-    '(' + lat + ',' + lng + ')',
-    locationName,
-    "",
-    "",
-    note || ""
-  ];
-  sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+  try {
+    const attLastRow = sh.getLastRow();
+    if (attLastRow >= 2) {
+      const startRow = Math.max(2, attLastRow - ATTENDANCE_SCAN_TAIL_ROWS + 1);
+      // 只讀 A~H 欄（日期／userId／…／類型／…／備註），不整表拉下來
+      const attendanceValues = sh.getRange(startRow, 1, attLastRow - startRow + 1, 8).getValues();
 
-  Logger.log('打卡成功: ' + user.name + ' - ' + type);
-  return { ok: true, code: "PUNCH_SUCCESS", params: { type: type } };
+      for (let i = 0; i < attendanceValues.length; i++) {
+        const row = attendanceValues[i];
+        if (!row[0]) continue;
+
+        const rowDate = Utilities.formatDate(new Date(row[0]), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+        if (rowDate !== today) continue;
+
+        const rowUserId = String(row[1]).trim();
+        const rowType = String(row[4]).trim();
+        const rowNote = String(row[7] || '').trim();
+
+        // 跳過補打卡記錄
+        if (rowNote === '補打卡') continue;
+
+        if (rowUserId === user.userId && rowType === type) {
+          Logger.log('防重複: ' + user.name + ' 今天（' + today + '）已打 ' + type + ' 卡');
+          return {
+            ok: false,
+            code: "ERR_DUPLICATE_PUNCH",
+            msg: '今天已經打過' + type + '卡，請勿重複打卡'
+          };
+        }
+      }
+    }
+
+    // 寫入打卡記錄
+    const row = [
+      new Date(),
+      user.userId,
+      user.dept,
+      user.name,
+      type,
+      '(' + lat + ',' + lng + ')',
+      locationName,
+      "",
+      "",
+      note || ""
+    ];
+    sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+    SpreadsheetApp.flush();
+
+    Logger.log('打卡成功: ' + user.name + ' - ' + type);
+    return { ok: true, code: "PUNCH_SUCCESS", params: { type: type } };
+
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 
@@ -590,10 +714,20 @@ function punchAdjusted(sessionToken, type, punchDate, lat, lng, note) {
 /**
  * 取得出勤紀錄
  */
+// ⚡ 同一次執行內的記憶體快取（避免一支 API 內重複讀同一張表）
+let _attendanceRowsMemo = null;
+
 function getAttendanceRecords(monthParam, userIdParam) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_ATTENDANCE);
-  const values = sheet.getDataRange().getValues().slice(1);
-  
+
+  let values = _attendanceRowsMemo;
+  if (!values) {
+    const lastRow = sheet.getLastRow();
+    const lastCol = 10; // A~J
+    values = (lastRow < 2) ? [] : sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    _attendanceRowsMemo = values;
+  }
+
   return values.filter(row => {
     if (!row[0]) return false;
     
@@ -1509,6 +1643,7 @@ function updateUserRole(userId, newRole) {
         }
         
         sheet.getRange(i + 1, 6).setValue(newDept);  // F 欄: 部門
+        invalidateEmployeeCache_(data[i][0]);
         
         Logger.log('✅ 已更新角色為: ' + newDept);
         
@@ -1868,6 +2003,7 @@ function updateEmployeeName(userId, newName) {
         // ⭐⭐⭐ 關鍵修正：同時更新姓名和 nameOverride
         sheet.getRange(i + 1, 3).setValue(trimmedName);   // C 欄：displayName
         sheet.getRange(i + 1, 9).setValue(trimmedName);   // I 欄：nameOverride（設定鎖定）
+        invalidateEmployeeCache_(data[i][0]);
         
         Logger.log('✅ 已更新姓名並設定鎖定');
         Logger.log('   舊姓名: ' + oldName);
