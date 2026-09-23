@@ -94,7 +94,21 @@ function submitLeaveRequest(sessionToken, leaveType, startDateTime, endDateTime,
         msg: "無法取得假期餘額"
       };
     }
-    
+
+    // ⭐ 後端也要比對餘額：前端檢查可能因逾時/錯誤被跳過，
+    //    不擋的話會送出「核准時才因餘額不足卡住」的申請
+    const availableHours = Number(balance.balance[leaveType]) || 0;
+    Logger.log(`   ${leaveType} 可用: ${availableHours} 小時，申請: ${workHours} 小時`);
+
+    if (Number(workHours) > availableHours) {
+      Logger.log('❌ 假期餘額不足');
+      return {
+        ok: false,
+        code: "ERR_INSUFFICIENT_BALANCE",
+        msg: `餘額不足！${getLeaveTypeLabel(leaveType)} 剩餘 ${availableHours} 小時，但您申請了 ${workHours} 小時`
+      };
+    }
+
     Logger.log('✅ 假期餘額檢查完成');
     Logger.log('');
     
