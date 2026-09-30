@@ -681,3 +681,8 @@ html.dark .day-cell.leave-day.abnormal-day {
     background: linear-gradient(135deg, #991b1b 0%, #1e40af 100%);
     border: 2px dashed #ef4444;
 }
+/* 首頁「考勤紀錄」（異常紀錄／補打卡清單）隱藏；
+   script.js 會用 style.display='block' 顯示，故需 !important 覆蓋 */
+#abnormal-records-section {
+    display: none !important;
+}
