@@ -513,11 +513,12 @@ function getShifts(filters) {
       const row = data[i];
       
       if (row[13] === '已刪除') continue;
-      
+      // ⚡ 先用便宜的員工比對過濾，再做日期格式化
+      if (filters && filters.employeeId && row[1] !== filters.employeeId) continue;
+
       const shiftDate = formatDateOnly(row[3]);
-      
+
       if (filters) {
-        if (filters.employeeId && row[1] !== filters.employeeId) continue;
         if (filters.startDate && shiftDate < formatDateOnly(filters.startDate)) continue;
         if (filters.endDate && shiftDate > formatDateOnly(filters.endDate)) continue;
         if (filters.shiftType && row[4] !== filters.shiftType) continue;

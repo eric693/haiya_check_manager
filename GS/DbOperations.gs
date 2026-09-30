@@ -728,12 +728,19 @@ function getAttendanceRecords(monthParam, userIdParam) {
     _attendanceRowsMemo = values;
   }
 
+  return filterAttendanceRows_(values, monthParam, userIdParam);
+}
+
+function attendanceRowMonth_(cell) {
+  if (!cell) return '';
+  const d = new Date(cell);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+}
+
+function filterAttendanceRows_(values, monthParam, userIdParam) {
   return values.filter(row => {
     if (!row[0]) return false;
-    
-    const d = new Date(row[0]);
-    const yyyy_mm = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
-    const monthMatch = yyyy_mm === monthParam;
+    const monthMatch = attendanceRowMonth_(row[0]) === monthParam;
     const userMatch = userIdParam ? row[1] === userIdParam : true;
     return monthMatch && userMatch;
   }).map(r => ({
@@ -748,6 +755,36 @@ function getAttendanceRecords(monthParam, userIdParam) {
     audit: r[8],
     device: r[9]
   }));
+}
+
+/**
+ * ⚡ 登入／異常紀錄專用：只讀單月資料
+ *
+ * getAttendanceRecords 每次都把整張打卡表（所有歷史 × 10 欄）拉下來，
+ * 打卡表越長登入越慢。這裡先只讀 A 欄日期找出該月所在的列範圍，
+ * 再只讀那一段 A~J 欄。結果與 getAttendanceRecords 相同。
+ */
+function getAttendanceRecordsForMonth_(monthParam, userIdParam) {
+  if (_attendanceRowsMemo) {
+    return filterAttendanceRows_(_attendanceRowsMemo, monthParam, userIdParam);
+  }
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_ATTENDANCE);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  const dates = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  let first = -1, last = -1;
+  for (let i = 0; i < dates.length; i++) {
+    if (attendanceRowMonth_(dates[i][0]) === monthParam) {
+      if (first === -1) first = i;
+      last = i;
+    }
+  }
+  if (first === -1) return [];
+
+  const block = sheet.getRange(first + 2, 1, last - first + 1, 10).getValues();
+  return filterAttendanceRows_(block, monthParam, userIdParam);
 }
 
 /**

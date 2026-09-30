@@ -299,7 +299,7 @@ function testHandleAdjustPunchComplete() {
 function handleGetAbnormalRecords(params) {
   const { month, userId } = params;
   if (!month) return { ok: false, code: "ERR_MISSING_MONTH" };
-  const records = getAttendanceRecords(month, userId);
+  const records = getAttendanceRecordsForMonth_(month, userId);
   const abnormalResults = checkAttendanceAbnormal(records);
   return { ok: true, records: abnormalResults };
 }
@@ -2244,28 +2244,14 @@ function handleInitApp(params) {
     const month = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
     const userId = session.user.userId;
     
-    const records = getAttendanceRecords(month, userId);
+    const records = getAttendanceRecordsForMonth_(month, userId);
     const abnormalResults = checkAttendanceAbnormal(records);
-    
-    // 👇 3. 取得加班記錄（新增）
-    const overtimeRecords = getApprovedOvertimeRecords(userId, month);
-    
-    // 👇 4. 將加班記錄加入異常記錄陣列
-    overtimeRecords.forEach(ot => {
-      abnormalResults.push({
-        date: ot.date,
-        reason: 'STATUS_OVERTIME_APPROVED',
-        punchTypes: null,
-        overtime: {
-          startTime: ot.startTime,
-          endTime: ot.endTime,
-          hours: ot.hours,
-          reason: ot.reason
-        }
-      });
-    });
-    
-    // 5. 返回合併結果
+
+    // ⚡ 原本這裡會再呼叫 getApprovedOvertimeRecords(userId, month)，
+    //    但參數順序顛倒（應為 month, userId），從來比對不到任何資料，
+    //    卻每次登入都全表掃描加班表並逐列寫 log，已移除。
+
+    // 3. 返回結果
     return {
       ok: true,
       user: session.user,
