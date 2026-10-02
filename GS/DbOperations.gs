@@ -804,7 +804,8 @@ function getAttendanceDetails(monthParam, userIdParam) {
     Logger.log(`   monthParam: ${monthParam}`);
     Logger.log(`   userIdParam: ${userIdParam}`);
     
-    const records = getAttendanceRecords(monthParam, userIdParam);
+    // ⚡ 只讀該月打卡資料（原本整張打卡表全讀，常超過前端 20 秒逾時）
+    const records = getAttendanceRecordsForMonth_(monthParam, userIdParam);
     const leaveRecords = getApprovedLeaveRecords(monthParam, userIdParam);
     const overtimeRecords = getApprovedOvertimeRecords(monthParam, userIdParam);
     

@@ -111,6 +111,8 @@ function renderTranslations(container = document) {
  */
 // ⏱️ API 逾時設定（Apps Script 慢或斷線時，避免畫面永遠卡在 loading）
 const API_TIMEOUT_MS = 20000;
+// 報表匯出要讀整月資料，比一般 API 慢很多，給較長的逾時
+const API_EXPORT_TIMEOUT_MS = 60000;
 
 // 🔢 loading 遮罩計數器：多支 API 併發時，最快回來的那支不會提前把遮罩關掉
 const _loadingCounters = {};
@@ -134,14 +136,14 @@ function popLoading(loadingId) {
 // 🔁 同一個 action 併發去重：重複點擊分頁／按鈕時共用同一個請求
 const _inflightRequests = new Map();
 
-async function callApifetch(action, loadingId = "loading") {
+async function callApifetch(action, loadingId = "loading", timeoutMs = API_TIMEOUT_MS) {
     const existing = _inflightRequests.get(action);
     if (existing) {
         console.log('♻️ 沿用進行中的相同請求:', action);
         return existing;
     }
 
-    const promise = _callApifetchInner(action, loadingId);
+    const promise = _callApifetchInner(action, loadingId, timeoutMs);
     _inflightRequests.set(action, promise);
     try {
         return await promise;
@@ -150,7 +152,7 @@ async function callApifetch(action, loadingId = "loading") {
     }
 }
 
-async function _callApifetchInner(action, loadingId = "loading") {
+async function _callApifetchInner(action, loadingId = "loading", timeoutMs = API_TIMEOUT_MS) {
     const token = localStorage.getItem("sessionToken");
     const url = `${API_CONFIG.apiUrl}?action=${action}&token=${token}`;
 
@@ -158,7 +160,7 @@ async function _callApifetchInner(action, loadingId = "loading") {
 
     // ⏱️ 逾時中斷，避免無限等待
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
         const response = await fetch(url, { signal: controller.signal });
@@ -224,7 +226,7 @@ async function exportAllEmployeesReport(monthKey) {
     
     try {
         // 呼叫 API 取得所有員工的出勤資料（不傳 userId）
-        const res = await callApifetch(`getAttendanceDetails&month=${monthKey}`);
+        const res = await callApifetch(`getAttendanceDetails&month=${monthKey}`, "loading", API_EXPORT_TIMEOUT_MS);
         
         if (!res.ok || !res.records || res.records.length === 0) {
             showNotification(t('EXPORT_NO_DATA') || '本月沒有出勤記錄', 'warning');
@@ -453,7 +455,7 @@ async function exportAttendanceReport(date) {
     
     try {
         // 呼叫 API 取得出勤資料
-        const res = await callApifetch(`getAttendanceDetails&month=${monthKey}&userId=${userId}`);
+        const res = await callApifetch(`getAttendanceDetails&month=${monthKey}&userId=${userId}`, "loading", API_EXPORT_TIMEOUT_MS);
         
         if (!res.ok || !res.records || res.records.length === 0) {
             showNotification(t('EXPORT_NO_DATA') || '本月沒有出勤記錄', 'warning');
@@ -3739,7 +3741,7 @@ async function exportEmployeePunchReport() {
         const employeeName = employeeSelect.options[employeeSelect.selectedIndex].text.split(' (')[0];
 
         // 呼叫後端 API 取得詳細打卡資料
-        const res = await callApifetch(`getAttendanceDetails&month=${yearMonth}&userId=${employeeId}`);
+        const res = await callApifetch(`getAttendanceDetails&month=${yearMonth}&userId=${employeeId}`, "loading", API_EXPORT_TIMEOUT_MS);
         
         if (!res.ok || !res.records || res.records.length === 0) {
             showNotification(t('EXPORT_NO_DATA') || '本月沒有出勤記錄', 'warning');
@@ -3897,7 +3899,7 @@ async function exportEmployeePunchReport() {
  */
 async function exportAllEmployeesPunchReport(yearMonth, exportBtn) {
     try {
-        const res = await callApifetch(`getAttendanceDetails&month=${yearMonth}`);
+        const res = await callApifetch(`getAttendanceDetails&month=${yearMonth}`, "loading", API_EXPORT_TIMEOUT_MS);
 
         if (!res.ok || !res.records || res.records.length === 0) {
             showNotification(t('EXPORT_NO_DATA') || '本月沒有出勤記錄', 'warning');
