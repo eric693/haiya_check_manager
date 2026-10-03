@@ -531,11 +531,16 @@ async function exportAttendanceReport(date) {
         XLSX.writeFile(wb, fileName);
         
         showNotification(t('EXPORT_SUCCESS') || '報表已成功匯出！', 'success');
-        
+
     } catch (error) {
         console.error('匯出失敗:', error);
-        showNotification(t('EXPORT_FAILED') || '匯出失敗，請稍後再試', 'error');
-        
+        // 逾時時 callApifetch 已顯示「伺服器回應逾時」，不要蓋掉
+        if (error && error.name !== 'AbortError') {
+            // 附上錯誤原因，方便判斷是連線失敗還是下載檔案失敗
+            const detail = error && error.message ? `（${error.message}）` : '';
+            showNotification((t('EXPORT_FAILED') || '匯出失敗，請稍後再試') + detail, 'error');
+        }
+
     } finally {
         // 恢復按鈕狀態
         if (exportBtn) {
