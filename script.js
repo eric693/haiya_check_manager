@@ -214,6 +214,31 @@ async function _callApifetchInner(action, loadingId = "loading", timeoutMs = API
  * 管理員匯出所有員工的出勤報表
  * @param {string} monthKey - 月份，格式: "YYYY-MM"
  */
+/**
+ * 把員工姓名轉成合法的 Excel 工作表名稱
+ * Excel 規定：不可含 : \ / ? * [ ]、最多 31 字、同一檔案內不可重複
+ * （員工 LINE 暱稱常有「/」或表情符號，直接當表名會讓整個匯出失敗）
+ */
+function safeSheetName(name, wb) {
+    // Excel 的 31 字上限以 UTF-16 計算（表情符號算 2），逐字累加以免切出半個表情符號
+    const clip = (str, max) => {
+        let out = '';
+        for (const ch of str) {
+            if (out.length + ch.length > max) break;
+            out += ch;
+        }
+        return out;
+    };
+    const base = clip(String(name || '').replace(/[:\\\/?*\[\]]/g, '_').trim(), 31) || '未知員工';
+    const used = ((wb && wb.SheetNames) || []).map(n => n.toLowerCase());
+    let result = base;
+    for (let n = 2; used.includes(result.toLowerCase()); n++) {
+        const suffix = `(${n})`;
+        result = clip(base, 31 - suffix.length) + suffix;
+    }
+    return result;
+}
+
 async function exportAllEmployeesReport(monthKey) {
     const exportBtn = document.getElementById('admin-export-all-btn');
     const loadingText = t('EXPORT_LOADING') || '正在準備報表...';
@@ -311,7 +336,7 @@ async function exportAllEmployeesReport(monthKey) {
             ];
             ws['!cols'] = wscols;
             
-            const sheetName = employee.name.substring(0, 31);
+            const sheetName = safeSheetName(employee.name, wb);
             XLSX.utils.book_append_sheet(wb, ws, sheetName);
         }
         
@@ -408,7 +433,7 @@ async function exportAllEmployeesLeaveReport(monthKey) {
                 { wch: 18 }, { wch: 18 }, { wch: 10 }, { wch: 10 },
                 { wch: 20 }, { wch: 8 }, { wch: 10 }, { wch: 18 }, { wch: 20 }
             ];
-            const sheetName = emp.name.substring(0, 31);
+            const sheetName = safeSheetName(emp.name, wb);
             XLSX.utils.book_append_sheet(wb, ws, sheetName);
         }
 
@@ -3987,7 +4012,7 @@ async function exportAllEmployeesPunchReport(yearMonth, exportBtn) {
 
             const ws = XLSX.utils.json_to_sheet(data);
             ws['!cols'] = wscols;
-            XLSX.utils.book_append_sheet(wb, ws, emp.name.substring(0, 31));
+            XLSX.utils.book_append_sheet(wb, ws, safeSheetName(emp.name, wb));
         }
 
         const fileName = `所有員工打卡記錄_${year}年${month}月.xlsx`;
